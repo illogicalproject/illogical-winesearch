@@ -106,6 +106,11 @@ function setupVideoCapture() {
 
 // ── Populate the sidebar analysis form ───────────────────────────────────────
 function populateAnalysisForm(data) {
+  // Swap panels first — nothing below should block this
+  const uploadSection = document.getElementById('upload-section');
+  if (uploadSection) uploadSection.style.display = 'none';
+  document.getElementById('analysis-panel').style.display = 'block';
+
   setField('f-producer',   data.producer);
   setField('f-wine-name',  data.wine_name);
   setField('f-varietal',   data.varietal);
@@ -119,22 +124,19 @@ function populateAnalysisForm(data) {
   setField('f-image-url',  data.imageUrl);
 
   const typeSelect = document.getElementById('f-wine-type');
-  typeSelect.value = data.wine_type || '';
+  if (typeSelect) typeSelect.value = data.wine_type || '';
 
   const badge = document.getElementById('confidence-badge');
-  badge.textContent = data.confidence || '—';
-  badge.className = 'confidence-badge conf-' + (data.confidence || 'low');
-
-  const img = document.getElementById('bottle-preview-img');
-  if (data.imageUrl) {
-    img.src = data.imageUrl;
-    img.style.display = 'block';
-  } else {
-    img.style.display = 'none';
+  if (badge) {
+    badge.textContent = data.confidence || '—';
+    badge.className = 'confidence-badge conf-' + (data.confidence || 'low');
   }
 
-  document.getElementById('upload-section').style.display = 'none';
-  document.getElementById('analysis-panel').style.display = 'block';
+  const img = document.getElementById('bottle-preview-img');
+  if (img) {
+    img.src = data.imageUrl || '';
+    img.style.display = data.imageUrl ? 'block' : 'none';
+  }
 }
 
 function setField(id, value) {
