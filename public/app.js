@@ -61,7 +61,9 @@ async function analyseImageFile(file) {
     populateAnalysisForm(data);
   } catch (err) {
     console.error('[analyze] caught error:', err);
-    toast(`Analysis failed: ${err.message}`, 'error');
+    // Show for 10 s and restore the upload zone so the user can try again.
+    toast(`Analysis failed: ${err.message}`, 'error', 10000);
+    document.getElementById('upload-section').classList.remove('hidden');
   } finally {
     setLoading(false);
   }
@@ -99,7 +101,8 @@ function setupVideoCapture() {
       const data = await postJSON('/api/analyze', { imageData: dataUrl });
       populateAnalysisForm(data);
     } catch (err) {
-      toast(`Analysis failed: ${err.message}`, 'error');
+      toast(`Analysis failed: ${err.message}`, 'error', 10000);
+      document.getElementById('upload-section').classList.remove('hidden');
     } finally {
       setLoading(false);
     }
@@ -420,12 +423,12 @@ function setLoading(on) {
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
-function toast(msg, type = 'info') {
+function toast(msg, type = 'info', duration = 4000) {
   const el = document.createElement('div');
   el.className = `toast ${type}`;
   el.textContent = msg;
   document.getElementById('toast-container').appendChild(el);
-  setTimeout(() => el.remove(), 4000);
+  setTimeout(() => el.remove(), duration);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
