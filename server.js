@@ -114,15 +114,20 @@ app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 const SERVER_TS = Date.now();
 const PUBLIC_DIR = path.join(__dirname, 'public');
 app.get('/', (_req, res) => {
-  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
-    .replace(/app\.js(\?[^"]*)?/, `app.js?v=${SERVER_TS}`);
+  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
+  const js   = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
+  // Inline app.js so the browser has no separate JS file to cache.
+  const full = html.replace(
+    /<script src="app\.js[^"]*"><\/script>/,
+    `<script>\n${js}\n</script>`,
+  );
   res.set({
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
     'Pragma': 'no-cache',
     'Expires': '0',
   });
-  res.send(html);
+  res.send(full);
 });
 
 app.use(express.static(PUBLIC_DIR, {
