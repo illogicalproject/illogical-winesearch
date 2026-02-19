@@ -108,7 +108,24 @@ function saveBase64Image(dataUrl) {
 // ── Middleware ────────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
-app.use(express.static(path.join(__dirname, 'public'), {
+
+// Serve index.html directly with no-cache headers and a server-start version
+// stamp injected into the script tag so every restart busts the JS cache.
+const SERVER_TS = Date.now();
+const PUBLIC_DIR = path.join(__dirname, 'public');
+app.get('/', (_req, res) => {
+  const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8')
+    .replace(/app\.js(\?[^"]*)?/, `app.js?v=${SERVER_TS}`);
+  res.set({
+    'Content-Type': 'text/html; charset=utf-8',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+  });
+  res.send(html);
+});
+
+app.use(express.static(PUBLIC_DIR, {
   setHeaders(res, filePath) {
     if (/\.(js|css|html)$/.test(filePath)) {
       res.setHeader('Cache-Control', 'no-store');
