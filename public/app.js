@@ -63,7 +63,6 @@ async function analyseImageFile(file) {
     console.error('[analyze] caught error:', err);
     // Show for 10 s and restore the upload zone so the user can try again.
     toast(`Analysis failed: ${err.message}`, 'error', 10000);
-    document.getElementById('upload-section').classList.remove('hidden');
   } finally {
     setLoading(false);
   }
@@ -102,7 +101,6 @@ function setupVideoCapture() {
       populateAnalysisForm(data);
     } catch (err) {
       toast(`Analysis failed: ${err.message}`, 'error', 10000);
-      document.getElementById('upload-section').classList.remove('hidden');
     } finally {
       setLoading(false);
     }
@@ -138,9 +136,6 @@ function populateAnalysisForm(data) {
     img.style.display = data.imageUrl ? 'block' : 'none';
   }
 
-  // Hide the upload zone and bring the analysis panel into view.
-  document.getElementById('upload-section').classList.add('hidden');
-  document.getElementById('analysis-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function setField(id, value) {
@@ -413,8 +408,6 @@ function clearAnalysisForm() {
   const img = document.getElementById('bottle-preview-img');
   if (img) { img.src = ''; img.style.display = 'none'; }
   document.getElementById('image-file-input').value = '';
-  // Restore the upload zone.
-  document.getElementById('upload-section').classList.remove('hidden');
 }
 
 // ── Loading state ─────────────────────────────────────────────────────────────
@@ -477,9 +470,13 @@ async function postJSON(url, body) {
 
 async function postForm(url, formData) {
   const r = await fetch(url, { method: 'POST', body: formData });
+  console.log(`[postForm] ${url} → HTTP ${r.status}`);
   if (!r.ok) {
-    const err = await r.json().catch(() => ({ error: r.statusText }));
-    throw new Error(err.error || r.statusText);
+    const body = await r.text();
+    console.error('[postForm] error body:', body);
+    let msg;
+    try { msg = JSON.parse(body).error; } catch { msg = body || r.statusText; }
+    throw new Error(msg);
   }
   return r.json();
 }
