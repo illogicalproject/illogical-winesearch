@@ -392,7 +392,7 @@ function exportCSV() {
 // ── Loading state ─────────────────────────────────────────────────────────────
 function setLoading(on) {
   document.getElementById('analysis-loading').classList.toggle('hidden', !on);
-  document.getElementById('analysis-panel').style.display = on ? 'none' : '';
+  if (on) document.getElementById('analysis-panel').style.display = 'none';
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
