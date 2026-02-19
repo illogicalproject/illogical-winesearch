@@ -52,6 +52,12 @@ async function handleFiles(fileList) {
 }
 
 async function analyseImageFile(file) {
+  // Show the bottle immediately from the local file — no server round-trip needed.
+  const localUrl = URL.createObjectURL(file);
+  const previewImg = document.getElementById('bottle-preview-img');
+  if (previewImg) { previewImg.src = localUrl; previewImg.style.display = 'block'; }
+  document.getElementById('analysis-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
   setLoading(true);
   try {
     const fd = new FormData();
