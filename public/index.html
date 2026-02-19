@@ -78,7 +78,7 @@
     .stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-top: 3px; }
 
     /* ── Layout ── */
-    .app { display: grid; grid-template-columns: 380px 1fr; height: calc(100vh - 64px - 57px); }
+    .app { display: grid; grid-template-columns: 380px 1fr; height: calc(100vh - 64px - 57px); overflow: hidden; }
     @media (max-width: 900px) { .app { grid-template-columns: 1fr; } }
 
     /* ── Sidebar (upload + analysis) ── */
@@ -86,6 +86,7 @@
       background: var(--surface);
       border-right: 1px solid var(--border);
       overflow-y: auto;
+      min-height: 0;
       padding: 24px;
       display: flex;
       flex-direction: column;
