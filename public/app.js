@@ -133,8 +133,8 @@ function populateAnalysisForm(data) {
     img.style.display = 'none';
   }
 
+  document.getElementById('upload-section').style.display = 'none';
   document.getElementById('analysis-panel').style.display = 'block';
-  document.getElementById('analysis-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function setField(id, value) {
@@ -170,8 +170,7 @@ async function saveWine() {
     renderInventory();
     refreshStats();
     toast(`"${saved.producer}" added to cellar!`, 'success');
-    document.getElementById('analysis-panel').style.display = 'none';
-    document.getElementById('image-file-input').value = '';
+    showUploadSection();
   } catch (err) {
     toast(`Save failed: ${err.message}`, 'error');
   } finally {
@@ -387,6 +386,13 @@ async function saveEdit() {
 // ── CSV export ────────────────────────────────────────────────────────────────
 function exportCSV() {
   window.location.href = '/api/export/csv';
+}
+
+// ── Toggle upload vs analysis panel ──────────────────────────────────────────
+function showUploadSection() {
+  document.getElementById('analysis-panel').style.display = 'none';
+  document.getElementById('upload-section').style.display = '';
+  document.getElementById('image-file-input').value = '';
 }
 
 // ── Loading state ─────────────────────────────────────────────────────────────

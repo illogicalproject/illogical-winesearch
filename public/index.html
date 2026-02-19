@@ -509,41 +509,46 @@
   <!-- ── Sidebar ── -->
   <aside class="sidebar">
 
-    <!-- Upload tabs -->
-    <div>
-      <p class="section-title">Add a Bottle</p>
-      <div class="tabs">
-        <button class="tab-btn active" data-tab="image">📷 Photo</button>
-        <button class="tab-btn" data-tab="video">🎥 Video</button>
-      </div>
-    </div>
+    <!-- Upload section (hidden when results are shown) -->
+    <div id="upload-section">
 
-    <!-- Image upload tab -->
-    <div class="tab-panel active" id="tab-image">
-      <div class="drop-zone" id="drop-zone">
-        <input type="file" id="image-file-input" accept="image/*" multiple />
-        <div class="drop-zone-icon">📸</div>
-        <p><strong>Drag &amp; drop</strong> a bottle photo here</p>
-        <p style="margin-top:4px">or click to browse</p>
-        <p style="margin-top:8px;font-size:.72rem">JPEG · PNG · WEBP — up to 15 MB</p>
-      </div>
-    </div>
-
-    <!-- Video capture tab -->
-    <div class="tab-panel" id="tab-video">
-      <div class="video-section">
-        <label id="video-input-label" for="video-file-input">
-          📂 Choose a video file
-        </label>
-        <input type="file" id="video-file-input" accept="video/*" />
-        <div id="video-container">
-          <video id="video-preview" controls></video>
-          <canvas id="capture-canvas"></canvas>
-          <p class="video-hint">Pause the video on a clear frame showing the label, then capture.</p>
-          <button class="btn btn-primary btn-full" id="capture-btn">📷 Capture Frame &amp; Analyse</button>
+      <!-- Upload tabs -->
+      <div>
+        <p class="section-title">Add a Bottle</p>
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="image">📷 Photo</button>
+          <button class="tab-btn" data-tab="video">🎥 Video</button>
         </div>
       </div>
-    </div>
+
+      <!-- Image upload tab -->
+      <div class="tab-panel active" id="tab-image">
+        <div class="drop-zone" id="drop-zone">
+          <input type="file" id="image-file-input" accept="image/*" multiple />
+          <div class="drop-zone-icon">📸</div>
+          <p><strong>Drag &amp; drop</strong> a bottle photo here</p>
+          <p style="margin-top:4px">or click to browse</p>
+          <p style="margin-top:8px;font-size:.72rem">JPEG · PNG · WEBP — up to 15 MB</p>
+        </div>
+      </div>
+
+      <!-- Video capture tab -->
+      <div class="tab-panel" id="tab-video">
+        <div class="video-section">
+          <label id="video-input-label" for="video-file-input">
+            📂 Choose a video file
+          </label>
+          <input type="file" id="video-file-input" accept="video/*" />
+          <div id="video-container">
+            <video id="video-preview" controls></video>
+            <canvas id="capture-canvas"></canvas>
+            <p class="video-hint">Pause the video on a clear frame showing the label, then capture.</p>
+            <button class="btn btn-primary btn-full" id="capture-btn">📷 Capture Frame &amp; Analyse</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- end #upload-section -->
 
     <!-- Analysis spinner -->
     <div id="analysis-loading" class="hidden" style="display:flex;align-items:center;gap:10px;justify-content:center;padding:16px;">
@@ -555,7 +560,10 @@
     <div id="analysis-panel">
       <div class="analysis-header">
         <h3>Detected Wine</h3>
-        <span class="confidence-badge" id="confidence-badge">—</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="confidence-badge" id="confidence-badge">—</span>
+          <button onclick="showUploadSection()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:.8rem;padding:2px 6px;" title="Scan another bottle">✕ New Scan</button>
+        </div>
       </div>
       <img id="bottle-preview-img" alt="Bottle preview" />
       <div class="analysis-form">
