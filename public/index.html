@@ -191,7 +191,6 @@
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden;
-      display: none;
     }
     .analysis-header {
       background: var(--wine-dark);
@@ -562,7 +561,7 @@
         <h3>Detected Wine</h3>
         <div style="display:flex;align-items:center;gap:8px">
           <span class="confidence-badge" id="confidence-badge">—</span>
-          <button onclick="showUploadSection()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:.8rem;padding:2px 6px;" title="Scan another bottle">✕ New Scan</button>
+          <button onclick="clearAnalysisForm()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:.8rem;padding:2px 6px;" title="Clear form">✕ Clear</button>
         </div>
       </div>
       <img id="bottle-preview-img" alt="Bottle preview" />

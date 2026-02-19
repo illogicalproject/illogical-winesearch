@@ -108,14 +108,6 @@ function setupVideoCapture() {
 
 // ── Populate the sidebar analysis form ───────────────────────────────────────
 function populateAnalysisForm(data) {
-  console.log('[populateAnalysisForm] called');
-  // Swap panels first — nothing below should block this
-  const uploadSection = document.getElementById('upload-section');
-  if (uploadSection) uploadSection.style.display = 'none';
-  const panel = document.getElementById('analysis-panel');
-  panel.style.display = 'block';
-  console.log('[populateAnalysisForm] panel display now:', panel.style.display, '| offsetHeight:', panel.offsetHeight);
-
   setField('f-producer',   data.producer);
   setField('f-wine-name',  data.wine_name);
   setField('f-varietal',   data.varietal);
@@ -397,15 +389,28 @@ function exportCSV() {
 
 // ── Toggle upload vs analysis panel ──────────────────────────────────────────
 function showUploadSection() {
-  document.getElementById('analysis-panel').style.display = 'none';
-  document.getElementById('upload-section').style.display = '';
+  document.getElementById('image-file-input').value = '';
+}
+
+function clearAnalysisForm() {
+  ['f-producer','f-wine-name','f-varietal','f-vintage','f-region',
+   'f-country','f-appellation','f-alcohol','f-notes','f-image-url'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const typeSelect = document.getElementById('f-wine-type');
+  if (typeSelect) typeSelect.value = '';
+  document.getElementById('f-quantity').value = 1;
+  const badge = document.getElementById('confidence-badge');
+  if (badge) { badge.textContent = '—'; badge.className = 'confidence-badge'; }
+  const img = document.getElementById('bottle-preview-img');
+  if (img) { img.src = ''; img.style.display = 'none'; }
   document.getElementById('image-file-input').value = '';
 }
 
 // ── Loading state ─────────────────────────────────────────────────────────────
 function setLoading(on) {
   document.getElementById('analysis-loading').classList.toggle('hidden', !on);
-  if (on) document.getElementById('analysis-panel').style.display = 'none';
 }
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
