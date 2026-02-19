@@ -57,8 +57,10 @@ async function analyseImageFile(file) {
     const fd = new FormData();
     fd.append('image', file);
     const data = await postForm('/api/analyze', fd);
+    console.log('[analyze] API data received:', data);
     populateAnalysisForm(data);
   } catch (err) {
+    console.error('[analyze] caught error:', err);
     toast(`Analysis failed: ${err.message}`, 'error');
   } finally {
     setLoading(false);
@@ -106,10 +108,13 @@ function setupVideoCapture() {
 
 // ── Populate the sidebar analysis form ───────────────────────────────────────
 function populateAnalysisForm(data) {
+  console.log('[populateAnalysisForm] called');
   // Swap panels first — nothing below should block this
   const uploadSection = document.getElementById('upload-section');
   if (uploadSection) uploadSection.style.display = 'none';
-  document.getElementById('analysis-panel').style.display = 'block';
+  const panel = document.getElementById('analysis-panel');
+  panel.style.display = 'block';
+  console.log('[populateAnalysisForm] panel display now:', panel.style.display, '| offsetHeight:', panel.offsetHeight);
 
   setField('f-producer',   data.producer);
   setField('f-wine-name',  data.wine_name);
