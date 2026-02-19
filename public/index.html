@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wine Cellar — AI Inventory</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & tokens ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --wine:        #8B1A2B;
+      --wine-dark:   #5C0F1A;
+      --wine-light:  #B02C42;
+      --gold:        #C4973B;
+      --gold-light:  #E3B86A;
+      --bg:          #110508;
+      --surface:     #1E0A10;
+      --surface2:    #2A1018;
+      --border:      #3D1820;
+      --text:        #F0E6D0;
+      --text-muted:  #9E8878;
+      --green:       #2D7A4F;
+      --red-soft:    #C84B5A;
+      --radius:      10px;
+      --shadow:      0 4px 24px rgba(0,0,0,.5);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    /* ── Header ── */
+    header {
+      background: linear-gradient(135deg, var(--wine-dark) 0%, #1E0A10 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow);
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: 'Playfair Display', serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--gold-light);
+      letter-spacing: .02em;
+    }
+    .logo-icon { font-size: 1.6rem; }
+    .header-actions { display: flex; gap: 10px; align-items: center; }
+
+    /* ── Stats bar ── */
+    #stats-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      gap: 32px;
+      flex-wrap: wrap;
+    }
+    .stat { display: flex; flex-direction: column; }
+    .stat-value { font-size: 1.4rem; font-weight: 600; color: var(--gold-light); line-height: 1; }
+    .stat-label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-top: 3px; }
+
+    /* ── Layout ── */
+    .app { display: grid; grid-template-columns: 380px 1fr; min-height: calc(100vh - 64px - 57px); }
+    @media (max-width: 900px) { .app { grid-template-columns: 1fr; } }
+
+    /* ── Sidebar (upload + analysis) ── */
+    .sidebar {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    /* ── Upload tabs ── */
+    .tabs { display: flex; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .tab-btn {
+      flex: 1;
+      padding: 9px 12px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: .82rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background .15s, color .15s;
+    }
+    .tab-btn.active { background: var(--wine); color: #fff; }
+    .tab-btn:hover:not(.active) { background: var(--surface2); color: var(--text); }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Drop zone ── */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 32px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      background: var(--surface2);
+      position: relative;
+    }
+    .drop-zone.drag-over { border-color: var(--wine-light); background: #2A0E18; }
+    .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .drop-zone-icon { font-size: 2.5rem; margin-bottom: 8px; }
+    .drop-zone p { font-size: .85rem; color: var(--text-muted); }
+    .drop-zone p strong { color: var(--gold-light); }
+
+    /* ── Video capture ── */
+    .video-section { display: flex; flex-direction: column; gap: 12px; }
+    #video-input-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: .85rem;
+      color: var(--text-muted);
+      transition: border-color .2s;
+    }
+    #video-input-label:hover { border-color: var(--wine-light); color: var(--text); }
+    #video-file-input { display: none; }
+    #video-container { display: none; flex-direction: column; gap: 8px; }
+    #video-preview {
+      width: 100%;
+      max-height: 220px;
+      border-radius: 6px;
+      object-fit: contain;
+      background: #000;
+    }
+    #capture-canvas { display: none; }
+    .video-hint { font-size: .75rem; color: var(--text-muted); text-align: center; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 10px 18px;
+      border-radius: var(--radius);
+      border: none;
+      font-family: inherit;
+      font-size: .85rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: filter .15s, opacity .15s;
+      white-space: nowrap;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn:not(:disabled):hover { filter: brightness(1.12); }
+    .btn-primary { background: var(--wine); color: #fff; }
+    .btn-gold    { background: var(--gold); color: #1a0808; }
+    .btn-ghost   { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
+    .btn-ghost:hover { color: var(--text); border-color: var(--wine-light); }
+    .btn-danger  { background: var(--red-soft); color: #fff; }
+    .btn-sm      { padding: 6px 12px; font-size: .78rem; }
+    .btn-full    { width: 100%; }
+
+    /* ── Analysis result panel ── */
+    #analysis-panel {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: none;
+    }
+    .analysis-header {
+      background: var(--wine-dark);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .analysis-header h3 { font-size: .9rem; font-weight: 600; color: var(--gold-light); }
+    .confidence-badge {
+      font-size: .72rem;
+      padding: 3px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .conf-high   { background: #1a4a2e; color: #5DD98E; }
+    .conf-medium { background: #3a3010; color: #E3B86A; }
+    .conf-low    { background: #3a1010; color: #E36A6A; }
+
+    #bottle-preview-img {
+      width: 100%;
+      max-height: 200px;
+      object-fit: contain;
+      background: #000;
+      display: none;
+    }
+
+    .analysis-form { padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .form-group { display: flex; flex-direction: column; gap: 4px; }
+    .form-group label { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); }
+    .form-group input, .form-group select, .form-group textarea {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-family: inherit;
+      font-size: .85rem;
+      padding: 7px 10px;
+      transition: border-color .15s;
+      width: 100%;
+    }
+    .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+      outline: none;
+      border-color: var(--wine-light);
+    }
+    .form-group select option { background: var(--surface); }
+    .form-group textarea { resize: vertical; min-height: 60px; }
+
+    /* ── Spinner / loading ── */
+    .spinner {
+      width: 20px; height: 20px;
+      border: 2px solid rgba(255,255,255,.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast notifications ── */
+    #toast-container {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      display: flex; flex-direction: column; gap: 8px;
+      z-index: 999;
+    }
+    .toast {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--wine-light);
+      border-radius: 8px;
+      padding: 12px 16px;
+      min-width: 260px;
+      max-width: 380px;
+      font-size: .85rem;
+      box-shadow: var(--shadow);
+      animation: slideIn .25s ease;
+    }
+    .toast.success { border-left-color: var(--green); }
+    .toast.error   { border-left-color: var(--red-soft); }
+    @keyframes slideIn { from { transform: translateX(20px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* ── Main inventory panel ── */
+    .main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Toolbar ── */
+    .toolbar {
+      padding: 14px 20px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    #search-input {
+      flex: 1;
+      min-width: 180px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: .85rem;
+      padding: 8px 14px;
+    }
+    #search-input:focus { outline: none; border-color: var(--wine-light); }
+    #type-filter {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: inherit;
+      font-size: .82rem;
+      padding: 8px 12px;
+    }
+    .view-toggles { display: flex; gap: 4px; }
+    .view-btn {
+      padding: 7px 10px;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1rem;
+      transition: background .15s, color .15s;
+    }
+    .view-btn.active { background: var(--wine); color: #fff; border-color: var(--wine); }
+
+    /* ── Wine grid ── */
+    #inventory-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+    }
+
+    #wine-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .wine-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: transform .15s, box-shadow .15s;
+      cursor: default;
+    }
+    .wine-card:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(0,0,0,.6); }
+
+    .wine-card-img {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+      color: var(--border);
+    }
+    .wine-card-img img { width: 100%; height: 100%; object-fit: cover; }
+
+    .wine-card-body { padding: 12px; }
+    .wine-card-producer { font-family: 'Playfair Display', serif; font-size: .92rem; font-weight: 700; color: var(--gold-light); line-height: 1.2; margin-bottom: 2px; }
+    .wine-card-name { font-size: .78rem; color: var(--text-muted); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .wine-card-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+    .tag {
+      font-size: .68rem;
+      padding: 2px 7px;
+      border-radius: 20px;
+      font-weight: 500;
+    }
+    .tag-type-red        { background: #3d0f18; color: #E36A80; }
+    .tag-type-white      { background: #2e2c0a; color: #D4C85A; }
+    .tag-type-rose       { background: #3d1a24; color: #E3A0B8; }
+    .tag-type-sparkling  { background: #0d2e3d; color: #6AC8E3; }
+    .tag-type-dessert    { background: #3d2a0a; color: #E3B86A; }
+    .tag-type-fortified  { background: #1a0d3d; color: #9A80E3; }
+    .tag-type-orange     { background: #3d1e0a; color: #E3800A; }
+    .tag-type-unknown    { background: #1a1a1a; color: #888; }
+    .tag-vintage { background: #1a2a1a; color: #6AE380; }
+    .wine-card-footer { display: flex; align-items: center; justify-content: space-between; }
+    .qty-badge { font-size: .75rem; color: var(--text-muted); }
+    .card-actions { display: flex; gap: 4px; }
+
+    /* ── Wine table ── */
+    #wine-table-wrap { overflow-x: auto; }
+    #wine-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    #wine-table th {
+      background: var(--surface2);
+      border-bottom: 2px solid var(--border);
+      padding: 10px 12px;
+      text-align: left;
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    #wine-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    #wine-table tr:hover td { background: var(--surface2); }
+    .table-thumb {
+      width: 36px; height: 48px;
+      object-fit: cover;
+      border-radius: 4px;
+      background: var(--surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+    }
+    .table-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 4px; }
+
+    /* ── Empty state ── */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+    }
+    .empty-state-icon { font-size: 4rem; margin-bottom: 16px; opacity: .4; }
+    .empty-state h3 { font-size: 1.1rem; margin-bottom: 8px; color: var(--text); }
+    .empty-state p { font-size: .85rem; }
+
+    /* ── Edit modal ── */
+    #modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.7);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    #modal-overlay.open { display: flex; }
+    #modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: min(560px, 94vw);
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 16px 64px rgba(0,0,0,.7);
+    }
+    .modal-header {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .modal-header h2 { font-family: 'Playfair Display', serif; font-size: 1.1rem; color: var(--gold-light); }
+    .modal-close {
+      background: none; border: none; color: var(--text-muted);
+      font-size: 1.4rem; cursor: pointer; line-height: 1;
+    }
+    .modal-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+    .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--wine); }
+
+    /* ── Utility ── */
+    .hidden { display: none !important; }
+    .section-title {
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .divider { border: none; border-top: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div class="logo">
+    <span class="logo-icon">🍷</span>
+    Wine Cellar
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-ghost btn-sm" onclick="exportCSV()">&#8595; Export CSV</button>
+  </div>
+</header>
+
+<!-- ── Stats bar ── -->
+<div id="stats-bar">
+  <div class="stat"><span class="stat-value" id="stat-total-wines">0</span><span class="stat-label">Distinct Wines</span></div>
+  <div class="stat"><span class="stat-value" id="stat-total-bottles">0</span><span class="stat-label">Total Bottles</span></div>
+  <div class="stat"><span class="stat-value" id="stat-red">0</span><span class="stat-label">Red</span></div>
+  <div class="stat"><span class="stat-value" id="stat-white">0</span><span class="stat-label">White</span></div>
+  <div class="stat"><span class="stat-value" id="stat-sparkling">0</span><span class="stat-label">Sparkling</span></div>
+  <div class="stat"><span class="stat-value" id="stat-other">0</span><span class="stat-label">Other</span></div>
+</div>
+
+<!-- ── Main layout ── -->
+<div class="app">
+
+  <!-- ── Sidebar ── -->
+  <aside class="sidebar">
+
+    <!-- Upload tabs -->
+    <div>
+      <p class="section-title">Add a Bottle</p>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="image">📷 Photo</button>
+        <button class="tab-btn" data-tab="video">🎥 Video</button>
+      </div>
+    </div>
+
+    <!-- Image upload tab -->
+    <div class="tab-panel active" id="tab-image">
+      <div class="drop-zone" id="drop-zone">
+        <input type="file" id="image-file-input" accept="image/*" multiple />
+        <div class="drop-zone-icon">📸</div>
+        <p><strong>Drag &amp; drop</strong> a bottle photo here</p>
+        <p style="margin-top:4px">or click to browse</p>
+        <p style="margin-top:8px;font-size:.72rem">JPEG · PNG · WEBP — up to 15 MB</p>
+      </div>
+    </div>
+
+    <!-- Video capture tab -->
+    <div class="tab-panel" id="tab-video">
+      <div class="video-section">
+        <label id="video-input-label" for="video-file-input">
+          📂 Choose a video file
+        </label>
+        <input type="file" id="video-file-input" accept="video/*" />
+        <div id="video-container">
+          <video id="video-preview" controls></video>
+          <canvas id="capture-canvas"></canvas>
+          <p class="video-hint">Pause the video on a clear frame showing the label, then capture.</p>
+          <button class="btn btn-primary btn-full" id="capture-btn">📷 Capture Frame &amp; Analyse</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Analysis spinner -->
+    <div id="analysis-loading" class="hidden" style="display:flex;align-items:center;gap:10px;justify-content:center;padding:16px;">
+      <div class="spinner"></div>
+      <span style="font-size:.85rem;color:var(--text-muted)">Analysing with Claude Vision…</span>
+    </div>
+
+    <!-- Analysis result -->
+    <div id="analysis-panel">
+      <div class="analysis-header">
+        <h3>Detected Wine</h3>
+        <span class="confidence-badge" id="confidence-badge">—</span>
+      </div>
+      <img id="bottle-preview-img" alt="Bottle preview" />
+      <div class="analysis-form">
+        <div class="form-row">
+          <div class="form-group" style="grid-column:1/-1">
+            <label>Producer / Winery *</label>
+            <input type="text" id="f-producer" placeholder="e.g. Château Margaux" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="grid-column:1/-1">
+            <label>Wine Name / Cuvée</label>
+            <input type="text" id="f-wine-name" placeholder="e.g. Grand Vin" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Varietal / Blend</label>
+            <input type="text" id="f-varietal" placeholder="e.g. Merlot" />
+          </div>
+          <div class="form-group">
+            <label>Type</label>
+            <select id="f-wine-type">
+              <option value="">— select —</option>
+              <option value="red">Red</option>
+              <option value="white">White</option>
+              <option value="rosé">Rosé</option>
+              <option value="sparkling">Sparkling</option>
+              <option value="dessert">Dessert</option>
+              <option value="fortified">Fortified</option>
+              <option value="orange">Orange</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Vintage</label>
+            <input type="number" id="f-vintage" placeholder="e.g. 2018" min="1700" max="2099" />
+          </div>
+          <div class="form-group">
+            <label>Quantity</label>
+            <input type="number" id="f-quantity" value="1" min="1" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Region</label>
+            <input type="text" id="f-region" placeholder="e.g. Bordeaux" />
+          </div>
+          <div class="form-group">
+            <label>Country</label>
+            <input type="text" id="f-country" placeholder="e.g. France" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Appellation</label>
+            <input type="text" id="f-appellation" placeholder="e.g. AOC Margaux" />
+          </div>
+          <div class="form-group">
+            <label>Alcohol %</label>
+            <input type="number" id="f-alcohol" placeholder="e.g. 13.5" step="0.1" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Notes</label>
+          <textarea id="f-notes" placeholder="Personal tasting notes, purchase location…"></textarea>
+        </div>
+        <input type="hidden" id="f-image-url" />
+        <button class="btn btn-gold btn-full" id="save-btn" onclick="saveWine()">
+          + Add to Cellar
+        </button>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── Main inventory panel ── -->
+  <main class="main">
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <input type="search" id="search-input" placeholder="Search producer, varietal, region…" oninput="renderInventory()" />
+      <select id="type-filter" onchange="renderInventory()">
+        <option value="">All types</option>
+        <option value="red">Red</option>
+        <option value="white">White</option>
+        <option value="rosé">Rosé</option>
+        <option value="sparkling">Sparkling</option>
+        <option value="dessert">Dessert</option>
+        <option value="fortified">Fortified</option>
+        <option value="orange">Orange</option>
+      </select>
+      <div class="view-toggles">
+        <button class="view-btn active" id="view-grid" title="Grid view" onclick="setView('grid')">⊞</button>
+        <button class="view-btn" id="view-table" title="Table view" onclick="setView('table')">☰</button>
+      </div>
+    </div>
+
+    <!-- Inventory container -->
+    <div id="inventory-container">
+      <div id="wine-grid"></div>
+      <div id="wine-table-wrap" class="hidden"><table id="wine-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Producer</th>
+            <th>Wine Name</th>
+            <th>Varietal</th>
+            <th>Type</th>
+            <th>Vintage</th>
+            <th>Region</th>
+            <th>Country</th>
+            <th>Qty</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="wine-tbody"></tbody>
+      </table></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Edit modal ── -->
+<div id="modal-overlay">
+  <div id="modal">
+    <div class="modal-header">
+      <h2>Edit Wine</h2>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Producer / Winery *</label>
+          <input type="text" id="m-producer" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="grid-column:1/-1">
+          <label>Wine Name / Cuvée</label>
+          <input type="text" id="m-wine-name" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Varietal / Blend</label>
+          <input type="text" id="m-varietal" />
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select id="m-wine-type">
+            <option value="">— select —</option>
+            <option value="red">Red</option>
+            <option value="white">White</option>
+            <option value="rosé">Rosé</option>
+            <option value="sparkling">Sparkling</option>
+            <option value="dessert">Dessert</option>
+            <option value="fortified">Fortified</option>
+            <option value="orange">Orange</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Vintage</label>
+          <input type="number" id="m-vintage" min="1700" max="2099" />
+        </div>
+        <div class="form-group">
+          <label>Quantity</label>
+          <input type="number" id="m-quantity" min="1" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Region</label>
+          <input type="text" id="m-region" />
+        </div>
+        <div class="form-group">
+          <label>Country</label>
+          <input type="text" id="m-country" />
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Appellation</label>
+          <input type="text" id="m-appellation" />
+        </div>
+        <div class="form-group">
+          <label>Alcohol %</label>
+          <input type="number" id="m-alcohol" step="0.1" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="m-notes"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-gold" onclick="saveEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast container ── -->
+<div id="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

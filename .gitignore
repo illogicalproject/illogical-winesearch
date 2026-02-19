@@ -1,0 +1,5 @@
+node_modules/
+.env
+uploads/
+wine_inventory.json
+*.log
