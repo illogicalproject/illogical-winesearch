@@ -120,6 +120,7 @@ app.get('/api/wines', (_req, res) => {
 
 // POST /api/analyze     — analyze image, return wine data (does NOT save yet)
 app.post('/api/analyze', upload.single('image'), async (req, res) => {
+  console.log('[analyze] request received — file:', req.file?.originalname ?? 'none', '| body keys:', Object.keys(req.body));
   try {
     let base64Data, mimeType, imageUrl;
 
