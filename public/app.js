@@ -134,6 +134,10 @@ function populateAnalysisForm(data) {
     img.src = data.imageUrl || '';
     img.style.display = data.imageUrl ? 'block' : 'none';
   }
+
+  // Hide the upload zone and bring the analysis panel into view.
+  document.getElementById('upload-section').classList.add('hidden');
+  document.getElementById('analysis-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function setField(id, value) {
@@ -406,6 +410,8 @@ function clearAnalysisForm() {
   const img = document.getElementById('bottle-preview-img');
   if (img) { img.src = ''; img.style.display = 'none'; }
   document.getElementById('image-file-input').value = '';
+  // Restore the upload zone.
+  document.getElementById('upload-section').classList.remove('hidden');
 }
 
 // ── Loading state ─────────────────────────────────────────────────────────────
