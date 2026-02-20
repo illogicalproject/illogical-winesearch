@@ -175,6 +175,40 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
   }
 });
 
+// POST /api/wine-info   — fetch sommelier context for a known wine
+app.post('/api/wine-info', async (req, res) => {
+  try {
+    const { producer, wine_name, varietal, wine_type, vintage, region, country, appellation } = req.body;
+    const parts = [
+      producer    && `Producer: ${producer}`,
+      wine_name   && `Wine: ${wine_name}`,
+      varietal    && `Varietal: ${varietal}`,
+      wine_type   && `Type: ${wine_type}`,
+      vintage     && `Vintage: ${vintage}`,
+      appellation && `Appellation: ${appellation}`,
+      region      && `Region: ${region}`,
+      country     && `Country: ${country}`,
+    ].filter(Boolean).join('\n');
+
+    const message = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: `You are a master sommelier. Based on these wine details, provide context a collector would find useful.\n\n${parts}\n\nReturn ONLY a valid JSON object with these exact fields:\n{\n  "producer_bio":  "1-2 sentences about the producer's history and reputation (string or null)",\n  "tasting_notes": "expected tasting profile: aromas, palate, finish (string or null)",\n  "food_pairings": "2-3 food pairing suggestions (string or null)",\n  "price_range":   "typical retail price range e.g. $30–$50 (string or null)",\n  "drink_from":    "earliest recommended drinking year as integer, e.g. 2026 (integer or null)",\n  "drink_to":      "latest recommended drinking year as integer, e.g. 2035 (integer or null)",\n  "notable_info":  "critical scores, awards, or special characteristics (string or null)"\n}\nReturn ONLY the JSON object, no markdown fences.`,
+      }],
+    });
+
+    const raw = message.content[0].text.trim();
+    const jsonMatch = raw.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Unexpected response format');
+    res.json(JSON.parse(jsonMatch[0]));
+  } catch (err) {
+    console.error('[wine-info]', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/wines       — save a wine to inventory
 app.post('/api/wines', (req, res) => {
   const db = readDB();

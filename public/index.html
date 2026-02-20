@@ -185,6 +185,33 @@
     .btn-sm      { padding: 6px 12px; font-size: .78rem; }
     .btn-full    { width: 100%; }
 
+    /* ── Wine context panel ── */
+    #wine-context-panel {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .context-header {
+      background: var(--wine-dark);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .context-header h3 { font-size: .9rem; font-weight: 600; color: var(--gold-light); margin: 0; }
+    .context-loading { font-size: .78rem; color: var(--gold-light); opacity: .7; }
+    .context-body { padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+    .context-placeholder { font-size: .82rem; color: var(--text-muted); text-align: center; padding: 16px 0; }
+    .context-section h4 {
+      font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--text-muted); margin: 0 0 4px;
+    }
+    .context-section p { font-size: .84rem; line-height: 1.55; margin: 0; color: var(--text); }
+    .context-meta { display: flex; gap: 12px; flex-wrap: wrap; }
+    .context-meta .context-section { flex: 1; min-width: 100px; }
+
     /* ── Analysis result panel ── */
     #analysis-panel {
       background: var(--surface2);
@@ -627,6 +654,16 @@
             <input type="number" id="f-alcohol" placeholder="e.g. 13.5" step="0.1" />
           </div>
         </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Drink From</label>
+            <input type="number" id="f-drink-from" placeholder="e.g. 2025" min="1900" max="2099" />
+          </div>
+          <div class="form-group">
+            <label>Drink To</label>
+            <input type="number" id="f-drink-to" placeholder="e.g. 2035" min="1900" max="2099" />
+          </div>
+        </div>
         <div class="form-group">
           <label>Notes</label>
           <textarea id="f-notes" placeholder="Personal tasting notes, purchase location…"></textarea>
@@ -635,6 +672,41 @@
         <button class="btn btn-gold btn-full" id="save-btn" onclick="saveWine()">
           + Add to Cellar
         </button>
+      </div>
+    </div>
+
+    <!-- Wine context panel -->
+    <div id="wine-context-panel">
+      <div class="context-header">
+        <h3>About This Wine</h3>
+        <span class="context-loading" id="context-loading" style="display:none">Fetching details…</span>
+      </div>
+      <div class="context-body">
+        <p class="context-placeholder" id="context-placeholder">Scan a bottle to see sommelier notes.</p>
+        <div id="context-sections" style="display:none">
+          <div class="context-section" id="ctx-producer-section">
+            <h4>The Producer</h4>
+            <p id="ctx-producer"></p>
+          </div>
+          <div class="context-section" id="ctx-tasting-section">
+            <h4>Tasting Profile</h4>
+            <p id="ctx-tasting"></p>
+          </div>
+          <div class="context-section" id="ctx-pairings-section">
+            <h4>Food Pairings</h4>
+            <p id="ctx-pairings"></p>
+          </div>
+          <div class="context-meta">
+            <div class="context-section" id="ctx-price-section">
+              <h4>Typical Price</h4>
+              <p id="ctx-price"></p>
+            </div>
+            <div class="context-section" id="ctx-notable-section">
+              <h4>Notable</h4>
+              <p id="ctx-notable"></p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

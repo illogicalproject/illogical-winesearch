@@ -65,6 +65,7 @@ async function analyseImageFile(file) {
     const data = await postForm('/api/analyze', fd);
     console.log('[analyze] API data received:', data);
     populateAnalysisForm(data);
+    fetchWineContext(data); // fire-and-forget — fills context panel when ready
   } catch (err) {
     console.error('[analyze] caught error:', err);
     // Show for 10 s and restore the upload zone so the user can try again.
@@ -149,6 +150,57 @@ function setField(id, value) {
   if (el) el.value = value ?? '';
 }
 
+// ── Wine context (sommelier notes, drinking window) ───────────────────────────
+async function fetchWineContext(wineData) {
+  const loading  = document.getElementById('context-loading');
+  const placeholder = document.getElementById('context-placeholder');
+  const sections = document.getElementById('context-sections');
+
+  if (loading)     loading.style.display = 'inline';
+  if (placeholder) placeholder.style.display = 'none';
+  if (sections)    sections.style.display = 'none';
+
+  try {
+    const ctx = await postJSON('/api/wine-info', {
+      producer:    wineData.producer,
+      wine_name:   wineData.wine_name,
+      varietal:    wineData.varietal,
+      wine_type:   wineData.wine_type,
+      vintage:     wineData.vintage,
+      region:      wineData.region,
+      country:     wineData.country,
+      appellation: wineData.appellation,
+    });
+    populateWineContext(ctx);
+  } catch (err) {
+    console.error('[wine-info] error:', err);
+    if (placeholder) { placeholder.textContent = 'Could not load wine details.'; placeholder.style.display = ''; }
+  } finally {
+    if (loading) loading.style.display = 'none';
+  }
+}
+
+function populateWineContext(ctx) {
+  const setText = (id, val) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val || '—';
+  };
+  setText('ctx-producer', ctx.producer_bio);
+  setText('ctx-tasting',  ctx.tasting_notes);
+  setText('ctx-pairings', ctx.food_pairings);
+  setText('ctx-price',    ctx.price_range);
+  setText('ctx-notable',  ctx.notable_info);
+
+  // Populate drinking window fields in the form
+  setField('f-drink-from', ctx.drink_from ?? '');
+  setField('f-drink-to',   ctx.drink_to   ?? '');
+
+  const sections = document.getElementById('context-sections');
+  if (sections) sections.style.display = 'flex';
+  const placeholder = document.getElementById('context-placeholder');
+  if (placeholder) placeholder.style.display = 'none';
+}
+
 // ── Save wine from sidebar form ───────────────────────────────────────────────
 async function saveWine() {
   const producer = document.getElementById('f-producer').value.trim();
@@ -167,6 +219,8 @@ async function saveWine() {
     quantity:    parseInt(document.getElementById('f-quantity').value, 10) || 1,
     notes:       document.getElementById('f-notes').value.trim()       || null,
     imageUrl:    document.getElementById('f-image-url').value          || null,
+    drink_from:  toIntOrNull(document.getElementById('f-drink-from').value),
+    drink_to:    toIntOrNull(document.getElementById('f-drink-to').value),
   };
 
   const btn = document.getElementById('save-btn');
@@ -402,7 +456,8 @@ function showUploadSection() {
 
 function clearAnalysisForm() {
   ['f-producer','f-wine-name','f-varietal','f-vintage','f-region',
-   'f-country','f-appellation','f-alcohol','f-notes','f-image-url'].forEach(id => {
+   'f-country','f-appellation','f-alcohol','f-notes','f-image-url',
+   'f-drink-from','f-drink-to'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
@@ -414,6 +469,11 @@ function clearAnalysisForm() {
   const img = document.getElementById('bottle-preview-img');
   if (img) { img.src = ''; img.style.display = 'none'; }
   document.getElementById('image-file-input').value = '';
+  // Reset context panel
+  const placeholder = document.getElementById('context-placeholder');
+  if (placeholder) { placeholder.textContent = 'Scan a bottle to see sommelier notes.'; placeholder.style.display = ''; }
+  const sections = document.getElementById('context-sections');
+  if (sections) sections.style.display = 'none';
 }
 
 // ── Loading state ─────────────────────────────────────────────────────────────
