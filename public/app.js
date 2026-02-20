@@ -501,12 +501,22 @@ function renderCellar() {
   let filtered = wines.filter(w => !currentFilter || w.wine_type === currentFilter);
 
   if (!filtered.length) {
+    const isFiltered = !!currentFilter;
     grid.innerHTML = `
       <div class="empty-state">
-        <div class="empty-state-icon">🍾</div>
-        <h3>No wines here yet</h3>
-        <p>Scan a bottle on the Scan tab to add your first wine.</p>
+        <div class="empty-state-icon">🍷</div>
+        <h3>${isFiltered ? 'No wines in this category' : 'Your cellar is empty'}</h3>
+        <p>${isFiltered
+          ? 'Try a different filter, or scan a bottle to add one.'
+          : 'Please scan your first wine to add to your cellar.'}</p>
+        ${!isFiltered ? `<button class="empty-scan-btn" id="empty-scan-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="20" height="20"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          Scan a Bottle
+        </button>` : ''}
       </div>`;
+    if (!isFiltered) {
+      document.getElementById('empty-scan-btn').addEventListener('click', () => switchScreen('scan'));
+    }
     return;
   }
 
