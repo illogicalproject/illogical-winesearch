@@ -3,6 +3,7 @@
 let wines = [];           // local cache of inventory
 let currentView = 'grid'; // 'grid' | 'table'
 let editingId = null;     // id of wine being edited in modal
+let detailWineId = null;  // id of wine currently shown in detail overlay
 let bottleQueue = [];     // wines detected in the current scan
 let bottleQueueIndex = 0; // which bottle we're currently reviewing
 
@@ -108,7 +109,9 @@ function setupVideoCapture() {
     setLoading(true);
     try {
       const data = await postJSON('/api/analyze', { imageData: dataUrl });
-      populateAnalysisForm(data);
+      bottleQueue = data.bottles.map(b => ({ ...b, imageUrl: data.imageUrl }));
+      bottleQueueIndex = 0;
+      loadNextBottle();
     } catch (err) {
       toast(`Analysis failed: ${err.message}`, 'error', 10000);
     } finally {
@@ -146,6 +149,18 @@ function populateAnalysisForm(data) {
     img.style.display = data.imageUrl ? 'block' : 'none';
   }
 
+  // At-a-glance summary card
+  const summary = document.getElementById('form-summary');
+  if (summary) {
+    document.getElementById('fs-producer').textContent = data.producer || '—';
+    document.getElementById('fs-wine-name').textContent = data.wine_name || data.varietal || '';
+    document.getElementById('fs-tags').innerHTML = [
+      typeTag(data.wine_type),
+      data.vintage ? `<span class="tag tag-vintage">${data.vintage}</span>` : '',
+      data.region  ? `<span style="font-size:.72rem;color:var(--text-muted)">${esc(data.region)}</span>` : '',
+    ].join('');
+    summary.style.display = '';
+  }
 }
 
 function setField(id, value) {
@@ -328,7 +343,7 @@ function renderGrid(list) {
   if (!list.length) { grid.innerHTML = emptyStateHTML(); return; }
 
   grid.innerHTML = list.map((w) => `
-    <div class="wine-card" id="card-${w.id}">
+    <div class="wine-card" id="card-${w.id}" style="cursor:pointer" onclick="openWineDetail(${w.id})">
       <div class="wine-card-img">
         ${w.imageUrl
           ? `<img src="${w.imageUrl}" alt="${esc(w.producer)}" loading="lazy" />`
@@ -345,8 +360,8 @@ function renderGrid(list) {
         <div class="wine-card-footer">
           <span class="qty-badge">× ${w.quantity || 1} bottle${(w.quantity || 1) !== 1 ? 's' : ''}</span>
           <div class="card-actions">
-            <button class="btn btn-ghost btn-sm" onclick="openEdit(${w.id})" title="Edit">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteWine(${w.id})" title="Delete">🗑</button>
+            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openEdit(${w.id})" title="Edit">✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteWine(${w.id})" title="Delete">🗑</button>
           </div>
         </div>
       </div>
@@ -361,7 +376,7 @@ function renderTable(list) {
     return;
   }
   tbody.innerHTML = list.map((w) => `
-    <tr>
+    <tr style="cursor:pointer" onclick="openWineDetail(${w.id})">
       <td>
         <div class="table-thumb">
           ${w.imageUrl ? `<img src="${w.imageUrl}" alt="" />` : '🍾'}
@@ -375,7 +390,7 @@ function renderTable(list) {
       <td>${esc(w.region || '—')}</td>
       <td>${esc(w.country || '—')}</td>
       <td>${w.quantity || 1}</td>
-      <td>
+      <td onclick="event.stopPropagation()">
         <div style="display:flex;gap:4px">
           <button class="btn btn-ghost btn-sm" onclick="openEdit(${w.id})">✏️</button>
           <button class="btn btn-danger btn-sm" onclick="deleteWine(${w.id})">🗑</button>
@@ -421,6 +436,99 @@ async function deleteWine(id) {
     toast(`Delete failed: ${err.message}`, 'error');
   }
 }
+
+// ── Wine detail overlay ──────────────────────────────────────────────────────
+function openWineDetail(id) {
+  const wine = wines.find(w => w.id === id);
+  if (!wine) return;
+  detailWineId = id;
+
+  // Hero image
+  const imgWrap = document.getElementById('detail-hero-img');
+  imgWrap.innerHTML = wine.imageUrl
+    ? `<img src="${esc(wine.imageUrl)}" alt="${esc(wine.producer || '')}" />`
+    : '🍾';
+
+  // Tags: type + vintage + appellation pill
+  document.getElementById('detail-hero-tags').innerHTML = [
+    typeTag(wine.wine_type),
+    wine.vintage ? `<span class="tag tag-vintage">${wine.vintage}</span>` : '',
+    wine.appellation ? `<span class="tag" style="background:var(--surface2);border:1px solid var(--border);font-size:.68rem">${esc(wine.appellation)}</span>` : '',
+  ].join('');
+
+  document.getElementById('detail-producer').textContent  = wine.producer  || '—';
+  document.getElementById('detail-wine-name').textContent = wine.wine_name || wine.varietal || '';
+  document.getElementById('detail-location').textContent  = [wine.region, wine.country].filter(Boolean).join(', ');
+
+  const dw = document.getElementById('detail-drink-window');
+  if (wine.drink_from || wine.drink_to) {
+    dw.textContent = `Drink: ${wine.drink_from || '?'} – ${wine.drink_to || '?'}`;
+    dw.style.display = '';
+  } else {
+    dw.style.display = 'none';
+  }
+
+  // Facts grid
+  const facts = [
+    ['Varietal',    wine.varietal    || '—'],
+    ['Alcohol',     wine.alcohol     ? `${wine.alcohol}%` : '—'],
+    ['Volume',      wine.volume_ml   ? `${wine.volume_ml} ml` : '—'],
+    ['In Cellar',   `${wine.quantity || 1} bottle${(wine.quantity||1)!==1?'s':''}`],
+    ['Confidence',  wine.confidence  || '—'],
+    ['Added',       wine.dateAdded   ? new Date(wine.dateAdded).toLocaleDateString() : '—'],
+  ];
+  document.getElementById('detail-facts-grid').innerHTML = facts.map(([l, v]) =>
+    `<div><div class="detail-fact-label">${l}</div><div class="detail-fact-value">${esc(String(v))}</div></div>`
+  ).join('');
+
+  // Notes
+  const notesSection = document.getElementById('detail-notes-section');
+  document.getElementById('detail-notes-text').textContent = wine.notes || '';
+  notesSection.style.display = wine.notes ? '' : 'none';
+
+  // Context: reset then fetch
+  document.getElementById('detail-ctx-loading').style.display = '';
+  document.getElementById('detail-ctx-loading').textContent = 'Fetching sommelier notes…';
+  document.getElementById('detail-ctx-body').style.display = 'none';
+
+  const overlay = document.getElementById('detail-overlay');
+  overlay.style.display = 'flex';
+  overlay.scrollTop = 0;
+  document.body.style.overflow = 'hidden';
+
+  fetchDetailContext(wine);
+}
+
+async function fetchDetailContext(wine) {
+  try {
+    const ctx = await postJSON('/api/wine-info', {
+      producer: wine.producer, wine_name: wine.wine_name, varietal: wine.varietal,
+      wine_type: wine.wine_type, vintage: wine.vintage, region: wine.region,
+      country: wine.country, appellation: wine.appellation,
+    });
+    if (detailWineId !== wine.id) return; // overlay switched while fetching
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+    set('dctx-producer', ctx.producer_bio);
+    set('dctx-tasting',  ctx.tasting_notes);
+    set('dctx-pairings', ctx.food_pairings);
+    set('dctx-price',    ctx.price_range);
+    set('dctx-notable',  ctx.notable_info);
+    document.getElementById('detail-ctx-loading').style.display = 'none';
+    document.getElementById('detail-ctx-body').style.display   = '';
+  } catch {
+    if (detailWineId !== wine.id) return;
+    document.getElementById('detail-ctx-loading').textContent = 'Could not load wine details.';
+  }
+}
+
+function closeWineDetail() {
+  document.getElementById('detail-overlay').style.display = 'none';
+  document.body.style.overflow = '';
+  detailWineId = null;
+}
+
+function editWineFromDetail()   { openEdit(detailWineId); }
+async function deleteWineFromDetail() { const id = detailWineId; closeWineDetail(); await deleteWine(id); }
 
 // ── Edit modal ────────────────────────────────────────────────────────────────
 function openEdit(id) {
@@ -510,6 +618,8 @@ function clearAnalysisForm() {
   if (img) { img.src = ''; img.style.display = 'none'; }
   document.getElementById('image-file-input').value = '';
   document.getElementById('save-btn').disabled = true;
+  const summary = document.getElementById('form-summary');
+  if (summary) summary.style.display = 'none';
   const qp = document.getElementById('queue-progress');
   if (qp) qp.style.display = 'none';
   const skipBtn = document.getElementById('skip-btn');

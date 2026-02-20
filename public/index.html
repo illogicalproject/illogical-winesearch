@@ -468,7 +468,7 @@
       display: none;
       position: fixed; inset: 0;
       background: rgba(0,0,0,.7);
-      z-index: 200;
+      z-index: 300;
       align-items: center;
       justify-content: center;
     }
@@ -513,6 +513,98 @@
       margin-bottom: 8px;
     }
     .divider { border: none; border-top: 1px solid var(--border); }
+
+    /* ── Scan form at-a-glance summary ── */
+    .form-summary {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+    }
+    .form-summary-name { font-size: 1.05rem; font-weight: 700; color: var(--text); margin-bottom: 2px; }
+    .form-summary-sub  { font-size: .82rem; color: var(--gold-light); margin-bottom: 6px; min-height: 1em; }
+    .form-summary-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    /* ── Wine detail overlay ── */
+    #detail-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: var(--bg);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .detail-topbar {
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+      flex-shrink: 0;
+    }
+    .detail-topbar-actions { display: flex; gap: 8px; }
+    .detail-hero {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 20px;
+      padding: 20px 20px 0;
+      align-items: start;
+    }
+    @media (max-width: 540px) {
+      .detail-hero { grid-template-columns: 1fr; gap: 14px; padding: 14px 14px 0; }
+    }
+    .detail-hero-img {
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3.5rem;
+      aspect-ratio: 2 / 3;
+    }
+    @media (max-width: 540px) {
+      .detail-hero-img { aspect-ratio: auto; height: 180px; width: 100%; font-size: 4rem; }
+    }
+    .detail-hero-img img { width: 100%; height: 100%; object-fit: cover; }
+    .detail-hero-info { display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
+    .detail-hero-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .detail-producer  { font-size: 1.5rem; font-weight: 700; color: var(--text); line-height: 1.2; margin: 0; }
+    @media (max-width: 540px) { .detail-producer { font-size: 1.25rem; } }
+    .detail-wine-name { font-size: .95rem; color: var(--gold-light); margin: 0; font-weight: 400; }
+    .detail-location  { font-size: .82rem; color: var(--text-muted); }
+    .detail-drink-window { font-size: .82rem; color: var(--text-muted); }
+    .detail-section   { padding: 20px 20px 0; }
+    @media (max-width: 540px) { .detail-section { padding: 14px 14px 0; } }
+    .detail-section:last-child { padding-bottom: 32px; }
+    .detail-section-title {
+      font-size: .68rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--text-muted);
+      margin: 0 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .detail-facts-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+    @media (max-width: 480px) { .detail-facts-grid { grid-template-columns: repeat(2, 1fr); } }
+    .detail-fact-label { font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin-bottom: 3px; }
+    .detail-fact-value { font-size: .9rem; color: var(--text); font-weight: 500; }
+    .detail-notes-text { font-size: .88rem; line-height: 1.65; color: var(--text); margin: 0; white-space: pre-wrap; }
+    .dctx-row { margin-bottom: 14px; }
+    .dctx-row h4 { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); margin: 0 0 4px; }
+    .dctx-row p  { font-size: .88rem; line-height: 1.55; color: var(--text); margin: 0; }
+    .dctx-meta   { display: flex; gap: 20px; flex-wrap: wrap; }
+    .dctx-meta .dctx-row { flex: 1; min-width: 120px; }
   </style>
 </head>
 <body>
@@ -605,6 +697,11 @@
       </div>
       <img id="bottle-preview-img" alt="Bottle preview" />
       <div class="analysis-form">
+        <div id="form-summary" class="form-summary" style="display:none">
+          <div class="form-summary-name" id="fs-producer"></div>
+          <div class="form-summary-sub"  id="fs-wine-name"></div>
+          <div class="form-summary-tags" id="fs-tags"></div>
+        </div>
         <div class="form-row">
           <div class="form-group" style="grid-column:1/-1">
             <label>Producer / Winery *</label>
@@ -858,6 +955,62 @@
 
 <!-- ── Toast container ── -->
 <div id="toast-container"></div>
+
+<!-- ── Wine detail overlay ── -->
+<div id="detail-overlay" style="display:none">
+  <div class="detail-topbar">
+    <button class="btn btn-ghost btn-sm" onclick="closeWineDetail()">← Back</button>
+    <div class="detail-topbar-actions">
+      <button class="btn btn-ghost btn-sm" id="detail-edit-btn" onclick="editWineFromDetail()">Edit</button>
+      <button class="btn btn-danger btn-sm" id="detail-delete-btn" onclick="deleteWineFromDetail()">Delete</button>
+    </div>
+  </div>
+
+  <div class="detail-hero">
+    <div class="detail-hero-img" id="detail-hero-img">🍾</div>
+    <div class="detail-hero-info">
+      <div class="detail-hero-tags" id="detail-hero-tags"></div>
+      <h1 class="detail-producer"   id="detail-producer"></h1>
+      <p  class="detail-wine-name"  id="detail-wine-name"></p>
+      <p  class="detail-location"   id="detail-location"></p>
+      <p  class="detail-drink-window" id="detail-drink-window"></p>
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <h3 class="detail-section-title">Details</h3>
+    <div class="detail-facts-grid" id="detail-facts-grid"></div>
+  </div>
+
+  <div class="detail-section" id="detail-notes-section">
+    <h3 class="detail-section-title">Personal Notes</h3>
+    <p class="detail-notes-text" id="detail-notes-text"></p>
+  </div>
+
+  <div class="detail-section">
+    <h3 class="detail-section-title">About This Wine</h3>
+    <div id="detail-ctx-loading" style="font-size:.85rem;color:var(--text-muted)">Fetching sommelier notes…</div>
+    <div id="detail-ctx-body" style="display:none">
+      <div class="dctx-row" id="dctx-producer-row">
+        <h4>The Producer</h4><p id="dctx-producer"></p>
+      </div>
+      <div class="dctx-row" id="dctx-tasting-row">
+        <h4>Tasting Profile</h4><p id="dctx-tasting"></p>
+      </div>
+      <div class="dctx-row" id="dctx-pairings-row">
+        <h4>Food Pairings</h4><p id="dctx-pairings"></p>
+      </div>
+      <div class="dctx-meta">
+        <div class="dctx-row" id="dctx-price-row">
+          <h4>Typical Price</h4><p id="dctx-price"></p>
+        </div>
+        <div class="dctx-row" id="dctx-notable-row">
+          <h4>Notable</h4><p id="dctx-notable"></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <script src="app.js?v=3"></script>
 </body>
