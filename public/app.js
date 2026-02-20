@@ -554,17 +554,23 @@ function openWineDetail(id) {
   }
 
   // Facts grid
+  const drinkWindow = (wine.drink_from || wine.drink_to)
+    ? `${wine.drink_from || '?'} – ${wine.drink_to || '?'}`
+    : null;
   const facts = [
-    ['Varietal',    wine.varietal    || '—'],
-    ['Alcohol',     wine.alcohol     ? `${wine.alcohol}%` : '—'],
-    ['Volume',      wine.volume_ml   ? `${wine.volume_ml} ml` : '—'],
-    ['In Cellar',   `${wine.quantity || 1} bottle${(wine.quantity||1)!==1?'s':''}`],
-    ['Confidence',  wine.confidence  || '—'],
-    ['Added',       wine.dateAdded   ? new Date(wine.dateAdded).toLocaleDateString() : '—'],
+    ['Varietal',     wine.varietal    || '—'],
+    ['Alcohol',      wine.alcohol     ? `${wine.alcohol}%` : '—'],
+    ['Volume',       wine.volume_ml   ? `${wine.volume_ml} ml` : '—'],
+    ['In Cellar',    `${wine.quantity || 1} bottle${(wine.quantity||1)!==1?'s':''}`],
+    ['Drink Window', drinkWindow || '—'],
+    ['Confidence',   wine.confidence  || '—'],
+    ['Added',        wine.dateAdded   ? new Date(wine.dateAdded).toLocaleDateString() : '—'],
   ];
-  document.getElementById('detail-facts-grid').innerHTML = facts.map(([l, v]) =>
-    `<div><div class="detail-fact-label">${l}</div><div class="detail-fact-value">${esc(String(v))}</div></div>`
-  ).join('');
+  document.getElementById('detail-facts-grid').innerHTML = facts.map(([l, v]) => {
+    const highlight = l === 'Drink Window' && drinkWindow
+      ? ' style="color:var(--gold);font-weight:600"' : '';
+    return `<div><div class="detail-fact-label">${l}</div><div class="detail-fact-value"${highlight}>${esc(String(v))}</div></div>`;
+  }).join('');
 
   // Notes
   const notesSection = document.getElementById('detail-notes-section');

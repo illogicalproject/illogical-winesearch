@@ -94,12 +94,13 @@
     .app {
       display: grid;
       grid-template-columns: 380px 1fr;
-      flex: 1;          /* fill remaining height after header + stats bar */
-      min-height: 0;    /* allow flex child to shrink below content size  */
+      grid-template-rows: 1fr;  /* explicit row fills container → gives sidebar a real height to scroll within */
+      flex: 1;
+      min-height: 0;
       overflow: hidden;
     }
     @media (max-width: 900px) {
-      .app { grid-template-columns: 1fr; flex: none; overflow: visible; }
+      .app { grid-template-columns: 1fr; grid-template-rows: auto; flex: none; overflow: visible; }
       .sidebar { overflow-y: visible; max-height: none; }
       .main { overflow: visible; min-height: 50vh; }
       #inventory-container { overflow-y: visible; }
@@ -345,6 +346,7 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      min-height: 0;
     }
 
     /* ── Toolbar ── */
@@ -630,7 +632,7 @@
     @media (max-width: 540px) { .detail-producer { font-size: 1.25rem; } }
     .detail-wine-name { font-size: .95rem; color: var(--gold-light); margin: 0; font-weight: 400; }
     .detail-location  { font-size: .82rem; color: var(--text-muted); }
-    .detail-drink-window { font-size: .82rem; color: var(--text-muted); }
+    .detail-drink-window { font-size: .82rem; color: var(--gold); font-weight: 500; }
     .detail-section   { padding: 20px 20px 0; }
     @media (max-width: 540px) { .detail-section { padding: 14px 14px 0; } }
     .detail-section:last-child { padding-bottom: 32px; }
