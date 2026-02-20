@@ -81,11 +81,18 @@ Return ONLY a JSON array — no markdown, no explanation — where each element 
   "alcohol":      "alcohol % as a number without the % sign, or null",
   "volume_ml":    "bottle size in ml as integer, e.g. 750, or null",
   "label_notes":  "brief description of any other label details worth noting (string or null)",
-  "confidence":   "high | medium | low — your overall confidence in this extraction"
+  "confidence":   "high | medium | low — your overall confidence in this extraction",
+  "bounding_box": {
+    "x_min": "left edge of bottle as a fraction of image width (0.0–1.0)",
+    "y_min": "top edge of bottle as a fraction of image height (0.0–1.0)",
+    "x_max": "right edge of bottle as a fraction of image width (0.0–1.0)",
+    "y_max": "bottom edge of bottle as a fraction of image height (0.0–1.0)"
+  }
 }
 
 Order elements from most to least prominent/readable. If only one bottle is visible, return a single-element array.
-If a field cannot be determined, use null. Return ONLY the JSON array.`,
+If a field cannot be determined, use null. The bounding_box must always be present and must use numbers, not strings.
+Return ONLY the JSON array.`,
           },
         ],
       },
@@ -191,6 +198,18 @@ app.post('/api/analyze', (req, res) => {
       res.status(500).json({ error: err.message });
     }
   });
+});
+
+// POST /api/upload-crop — save a pre-cropped base64 image, return its URL
+app.post('/api/upload-crop', (req, res) => {
+  try {
+    if (!req.body.imageData) return res.status(400).json({ error: 'No imageData provided.' });
+    const saved = saveBase64Image(req.body.imageData);
+    res.json({ imageUrl: `/uploads/${saved.filename}` });
+  } catch (err) {
+    console.error('[upload-crop]', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // POST /api/wine-info   — fetch sommelier context for a known wine

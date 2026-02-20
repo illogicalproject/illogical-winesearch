@@ -193,15 +193,29 @@ async function analyzeImage(payload) {
   }
 }
 
-function handleAnalysisResult(data) {
+async function handleAnalysisResult(data) {
   if (!data.bottles || !data.bottles.length) {
     toast('No wine label detected. Try again with better lighting.', 'error');
     return;
   }
-  bottleQueue    = data.bottles.map(b => ({ ...b, imageUrl: data.imageUrl }));
+
+  // Crop each bottle to its own tight image concurrently
+  const rawBottles = data.bottles.map(b => ({ ...b, imageUrl: data.imageUrl }));
+  const croppedBottles = await Promise.all(rawBottles.map(async bottle => {
+    if (bottle.bounding_box && data.imageUrl) {
+      try {
+        const croppedUrl = await cropBottleImage(data.imageUrl, bottle.bounding_box);
+        return { ...bottle, imageUrl: croppedUrl };
+      } catch {
+        return bottle; // fall back to full image silently
+      }
+    }
+    return bottle;
+  }));
+
+  bottleQueue    = croppedBottles;
   bottleQueueIdx = 0;
 
-  // Show AR bubble briefly with first result
   const first = bottleQueue[0];
   showARBubble(first);
   setTimeout(() => {
@@ -212,6 +226,45 @@ function handleAnalysisResult(data) {
 
   haptic([40, 60, 40]);
   playTone(660, 120);
+}
+
+/* Crop a bottle out of imageUrl using normalised bbox coords, upload the crop */
+async function cropBottleImage(imageUrl, bbox) {
+  const img = await loadImage(imageUrl);
+  const W = img.naturalWidth;
+  const H = img.naturalHeight;
+
+  // 4% padding so the bottle isn't clipped right at the edge
+  const pad = 0.04;
+  const x1 = Math.max(0, (bbox.x_min ?? 0) - pad) * W;
+  const y1 = Math.max(0, (bbox.y_min ?? 0) - pad) * H;
+  const x2 = Math.min(W, ((bbox.x_max ?? 1) + pad) * W);
+  const y2 = Math.min(H, ((bbox.y_max ?? 1) + pad) * H);
+  const cropW = x2 - x1;
+  const cropH = y2 - y1;
+
+  // Skip crop if bbox is basically the whole image (no real segmentation)
+  const areaFraction = (cropW / W) * (cropH / H);
+  if (areaFraction > 0.85) return imageUrl;
+
+  const canvas = document.createElement('canvas');
+  canvas.width  = cropW;
+  canvas.height = cropH;
+  canvas.getContext('2d').drawImage(img, x1, y1, cropW, cropH, 0, 0, cropW, cropH);
+
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+  const { imageUrl: croppedUrl } = await postJSON('/api/upload-crop', { imageData: dataUrl });
+  return croppedUrl;
+}
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload  = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
 }
 
 /* AR bubble */
