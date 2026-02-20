@@ -1,308 +1,359 @@
-/* ── Wine Cellar — Frontend Logic ────────────────────────────────────────── */
+/* ── Wine Cellar — Mobile-First App Logic ──────────────────────────────────── */
 
-let wines = [];           // local cache of inventory
-let currentView = 'grid'; // 'grid' | 'table'
-let editingId = null;     // id of wine being edited in modal
-let detailWineId = null;  // id of wine currently shown in detail overlay
-let bottleQueue = [];     // wines detected in the current scan
-let bottleQueueIndex = 0; // which bottle we're currently reviewing
+/* ── State ─────────────────────────────────────────────────────────────────── */
+let wines          = [];
+let currentScreen  = 'scan';
+let cameraStream   = null;
+let facingMode     = 'environment';
+let flashEnabled   = false;
+let bottleQueue    = [];
+let bottleQueueIdx = 0;
+let currentQty     = 1;
+let editingId      = null;
+let detailWineId   = null;
+let currentFilter  = '';
+let currentGroup   = 'type';
+let speechRec      = null;
+let audioCtx       = null;
+let sheetDragStart = null;
 
-// ── Bootstrap ────────────────────────────────────────────────────────────────
+/* ── Bootstrap ─────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
-  setupTabs();
-  setupDropZone();
-  setupVideoCapture();
+  setupNav();
+  setupCamera();
+  setupGallery();
+  setupVerifySheet();
+  setupDetailSheet();
+  setupEditSheet();
+  setupSearch();
+  setupCellarFilters();
+  setupGroupToggle();
+  setupDuplicateDialog();
+  setupExport();
   loadInventory();
 });
 
-// ── Tab switching ─────────────────────────────────────────────────────────────
-function setupTabs() {
-  document.querySelectorAll('.tab-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const tab = btn.dataset.tab;
-      document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById(`tab-${tab}`).classList.add('active');
-    });
+/* ════════════════════════════════════════════════════════════════════════════
+   NAVIGATION
+════════════════════════════════════════════════════════════════════════════ */
+function setupNav() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => switchScreen(btn.dataset.screen));
   });
 }
 
-// ── Drag-and-drop image upload ────────────────────────────────────────────────
-function setupDropZone() {
-  const zone = document.getElementById('drop-zone');
-  const fileInput = document.getElementById('image-file-input');
+function switchScreen(name) {
+  if (name === currentScreen) return;
+  const prev = currentScreen;
+  currentScreen = name;
 
-  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', () => zone.classList.remove('drag-over'));
-  zone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    zone.classList.remove('drag-over');
-    handleFiles(e.dataTransfer.files);
-  });
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.screen === name));
+  const next = document.getElementById(`screen-${name}`);
+  if (next) next.classList.add('active');
 
-  fileInput.addEventListener('change', () => handleFiles(fileInput.files));
-}
-
-async function handleFiles(fileList) {
-  const files = Array.from(fileList).filter((f) => f.type.startsWith('image/'));
-  if (!files.length) return toast('Please select an image file.', 'error');
-
-  // Analyse the first file; queue the rest if multiple dropped
-  for (const file of files) {
-    await analyseImageFile(file);
+  // Camera lifecycle
+  if (name === 'scan') {
+    startCamera();
+  } else if (prev === 'scan') {
+    // Keep camera alive for quick return; stop after 30s
+    clearTimeout(window._cameraStopTimer);
+    window._cameraStopTimer = setTimeout(stopCamera, 30000);
   }
 }
 
-async function analyseImageFile(file) {
-  // Show the bottle immediately from the local file — no server round-trip needed.
-  const localUrl = URL.createObjectURL(file);
-  const previewImg = document.getElementById('bottle-preview-img');
-  if (previewImg) { previewImg.src = localUrl; previewImg.style.display = 'block'; }
-  document.getElementById('analysis-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+/* ════════════════════════════════════════════════════════════════════════════
+   CAMERA
+════════════════════════════════════════════════════════════════════════════ */
+function setupCamera() {
+  document.getElementById('capture-btn').addEventListener('click', captureFrame);
+  document.getElementById('camera-flip-btn').addEventListener('click', flipCamera);
+  document.getElementById('flash-btn').addEventListener('click', toggleFlash);
+  document.getElementById('voice-scan-btn').addEventListener('click', () => {
+    toast('Scan a bottle first, then add a voice note in the verify screen.', 'info');
+  });
+  document.getElementById('open-gallery-fallback').addEventListener('click', () => {
+    document.getElementById('gallery-input').click();
+  });
+  startCamera();
+}
 
-  setLoading(true);
+async function startCamera() {
+  if (cameraStream) return; // already running
+  const video = document.getElementById('camera-video');
+  const noAccess = document.getElementById('camera-no-access');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode,
+        width:  { ideal: 1920 },
+        height: { ideal: 1080 },
+      },
+      audio: false,
+    });
+    cameraStream = stream;
+    video.srcObject = stream;
+    video.style.display = 'block';
+    noAccess.classList.remove('show');
+    clearTimeout(window._cameraStopTimer);
+  } catch {
+    cameraStream = null;
+    video.style.display = 'none';
+    noAccess.classList.add('show');
+  }
+}
+
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+    const video = document.getElementById('camera-video');
+    video.srcObject = null;
+  }
+}
+
+async function flipCamera() {
+  facingMode = facingMode === 'environment' ? 'user' : 'environment';
+  stopCamera();
+  await startCamera();
+  haptic([30]);
+}
+
+function toggleFlash() {
+  flashEnabled = !flashEnabled;
+  const btn = document.getElementById('flash-btn');
+  btn.classList.toggle('flash-on', flashEnabled);
+  if (cameraStream) {
+    const track = cameraStream.getVideoTracks()[0];
+    if (track && track.getCapabilities && track.getCapabilities().torch) {
+      track.applyConstraints({ advanced: [{ torch: flashEnabled }] }).catch(() => {});
+    }
+  }
+  haptic([20]);
+}
+
+async function captureFrame() {
+  const video = document.getElementById('camera-video');
+  if (!cameraStream || video.readyState < 2) {
+    // Fallback: open gallery
+    document.getElementById('gallery-input').click();
+    return;
+  }
+  haptic([35, 30, 35]);
+  const canvas = document.getElementById('capture-canvas');
+  canvas.width  = video.videoWidth  || 1280;
+  canvas.height = video.videoHeight || 720;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  await analyzeImage({ imageData: dataUrl });
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   GALLERY
+════════════════════════════════════════════════════════════════════════════ */
+function setupGallery() {
+  const input = document.getElementById('gallery-input');
+  document.getElementById('gallery-btn').addEventListener('click', () => input.click());
+  input.addEventListener('change', () => {
+    if (input.files.length) handleFiles(input.files);
+  });
+}
+
+async function handleFiles(fileList) {
+  const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+  if (!files.length) return toast('Please select an image file.', 'error');
+  for (const file of files) {
+    await analyzeFile(file);
+  }
+}
+
+async function analyzeFile(file) {
+  setCameraLoading(true);
   try {
     const fd = new FormData();
     fd.append('image', file);
     const data = await postForm('/api/analyze', fd);
-    console.log('[analyze] API data received:', data);
-    bottleQueue = data.bottles.map(b => ({ ...b, imageUrl: data.imageUrl }));
-    bottleQueueIndex = 0;
-    loadNextBottle();
+    handleAnalysisResult(data);
   } catch (err) {
-    console.error('[analyze] caught error:', err);
-    // Show for 10 s and restore the upload zone so the user can try again.
     toast(`Analysis failed: ${err.message}`, 'error', 10000);
   } finally {
-    setLoading(false);
+    setCameraLoading(false);
   }
 }
 
-// ── Video frame capture ───────────────────────────────────────────────────────
-function setupVideoCapture() {
-  const videoInput = document.getElementById('video-file-input');
-  const videoContainer = document.getElementById('video-container');
-  const videoPreview = document.getElementById('video-preview');
-  const captureBtn = document.getElementById('capture-btn');
-
-  videoInput.addEventListener('change', () => {
-    const file = videoInput.files[0];
-    if (!file) return;
-    videoPreview.src = URL.createObjectURL(file);
-    videoContainer.style.display = 'flex';
-    videoContainer.style.flexDirection = 'column';
-    videoContainer.style.gap = '8px';
-  });
-
-  captureBtn.addEventListener('click', async () => {
-    if (videoPreview.readyState < 2) {
-      return toast('Video is still loading — please wait.', 'error');
-    }
-
-    const canvas = document.getElementById('capture-canvas');
-    canvas.width  = videoPreview.videoWidth;
-    canvas.height = videoPreview.videoHeight;
-    canvas.getContext('2d').drawImage(videoPreview, 0, 0);
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
-
-    setLoading(true);
-    try {
-      const data = await postJSON('/api/analyze', { imageData: dataUrl });
-      bottleQueue = data.bottles.map(b => ({ ...b, imageUrl: data.imageUrl }));
-      bottleQueueIndex = 0;
-      loadNextBottle();
-    } catch (err) {
-      toast(`Analysis failed: ${err.message}`, 'error', 10000);
-    } finally {
-      setLoading(false);
-    }
-  });
-}
-
-// ── Populate the sidebar analysis form ───────────────────────────────────────
-function populateAnalysisForm(data) {
-  setField('f-producer',   data.producer);
-  setField('f-wine-name',  data.wine_name);
-  setField('f-varietal',   data.varietal);
-  setField('f-vintage',    data.vintage);
-  setField('f-region',     data.region);
-  setField('f-country',    data.country);
-  setField('f-appellation',data.appellation);
-  setField('f-alcohol',    data.alcohol);
-  setField('f-quantity',   1);
-  setField('f-notes',      data.label_notes);
-  setField('f-image-url',  data.imageUrl);
-
-  const typeSelect = document.getElementById('f-wine-type');
-  if (typeSelect) typeSelect.value = data.wine_type || '';
-
-  const badge = document.getElementById('confidence-badge');
-  if (badge) {
-    badge.textContent = data.confidence || '—';
-    badge.className = 'confidence-badge conf-' + (data.confidence || 'low');
-  }
-
-  const img = document.getElementById('bottle-preview-img');
-  if (img) {
-    img.src = data.imageUrl || '';
-    img.style.display = data.imageUrl ? 'block' : 'none';
-  }
-
-  // At-a-glance summary card
-  const summary = document.getElementById('form-summary');
-  if (summary) {
-    document.getElementById('fs-producer').textContent = data.producer || '—';
-    document.getElementById('fs-wine-name').textContent = data.wine_name || data.varietal || '';
-    document.getElementById('fs-tags').innerHTML = [
-      typeTag(data.wine_type),
-      data.vintage ? `<span class="tag tag-vintage">${data.vintage}</span>` : '',
-      data.region  ? `<span style="font-size:.72rem;color:var(--text-muted)">${esc(data.region)}</span>` : '',
-    ].join('');
-    summary.style.display = '';
+async function analyzeImage(payload) {
+  setCameraLoading(true);
+  try {
+    const data = await postJSON('/api/analyze', payload);
+    handleAnalysisResult(data);
+  } catch (err) {
+    toast(`Analysis failed: ${err.message}`, 'error', 10000);
+  } finally {
+    setCameraLoading(false);
   }
 }
 
-function setField(id, value) {
-  const el = document.getElementById(id);
-  if (el) el.value = value ?? '';
+function handleAnalysisResult(data) {
+  if (!data.bottles || !data.bottles.length) {
+    toast('No wine label detected. Try again with better lighting.', 'error');
+    return;
+  }
+  bottleQueue    = data.bottles.map(b => ({ ...b, imageUrl: data.imageUrl }));
+  bottleQueueIdx = 0;
+
+  // Show AR bubble briefly with first result
+  const first = bottleQueue[0];
+  showARBubble(first);
+  setTimeout(() => {
+    hideARBubble();
+    loadNextBottle();
+    openSheet('verify');
+  }, 1200);
+
+  haptic([40, 60, 40]);
+  playTone(660, 120);
 }
 
-// ── Wine context (sommelier notes, drinking window) ───────────────────────────
-async function fetchWineContext(wineData) {
-  const loading  = document.getElementById('context-loading');
-  const placeholder = document.getElementById('context-placeholder');
-  const sections = document.getElementById('context-sections');
+/* AR bubble */
+function showARBubble(bottle) {
+  const el  = document.getElementById('ar-bubble');
+  const p   = document.getElementById('ar-producer');
+  const sub = document.getElementById('ar-sub');
+  p.textContent   = bottle.producer || 'Wine detected';
+  sub.textContent = [bottle.wine_type, bottle.vintage].filter(Boolean).join(' · ');
+  el.classList.remove('hidden');
+}
+function hideARBubble() {
+  document.getElementById('ar-bubble').classList.add('hidden');
+}
 
-  if (loading)     loading.style.display = 'inline';
-  if (placeholder) placeholder.style.display = 'none';
-  if (sections)    sections.style.display = 'none';
+function setCameraLoading(on) {
+  const el = document.getElementById('camera-loading');
+  el.classList.toggle('visible', on);
+  const hint = document.getElementById('scan-hint');
+  hint.classList.toggle('hidden', on);
+}
 
+/* ════════════════════════════════════════════════════════════════════════════
+   VERIFY SHEET
+════════════════════════════════════════════════════════════════════════════ */
+function setupVerifySheet() {
+  document.getElementById('verify-close').addEventListener('click', () => closeSheet('verify'));
+  document.getElementById('verify-save-btn').addEventListener('click', saveVerifyBottle);
+  document.getElementById('verify-skip-btn').addEventListener('click', skipVerifyBottle);
+  document.getElementById('qty-plus').addEventListener('click', () => adjustQty(1));
+  document.getElementById('qty-minus').addEventListener('click', () => adjustQty(-1));
+  document.getElementById('voice-note-btn').addEventListener('click', toggleVoiceNote);
+  setupSheetDrag('verify-sheet', () => closeSheet('verify'));
+}
+
+function loadNextBottle() {
+  const bottle = bottleQueue[bottleQueueIdx];
+  if (!bottle) return;
+  currentQty = 1;
+  populateVerifySheet(bottle);
+  updateQueueIndicator();
+  fetchVerifyContext(bottle);
+}
+
+function populateVerifySheet(bottle) {
+  // Hero
+  const imgWrap = document.getElementById('verify-img-wrap');
+  if (bottle.imageUrl) {
+    imgWrap.innerHTML = `<img src="${esc(bottle.imageUrl)}" alt="${esc(bottle.producer || '')}" />`;
+  } else {
+    imgWrap.textContent = '🍾';
+  }
+
+  const conf = (bottle.confidence || 'low').toLowerCase();
+  const confEl = document.getElementById('verify-confidence');
+  confEl.className = `verify-confidence ${conf}`;
+  confEl.textContent = conf.charAt(0).toUpperCase() + conf.slice(1) + ' Confidence';
+
+  document.getElementById('verify-producer').textContent = bottle.producer || '—';
+  document.getElementById('verify-name').textContent     = bottle.wine_name || bottle.varietal || '';
+  document.getElementById('verify-location').textContent =
+    [bottle.region, bottle.country].filter(Boolean).join(', ');
+
+  document.getElementById('verify-tags').innerHTML = [
+    typeTag(bottle.wine_type),
+    bottle.vintage ? `<span class="tag tag-vintage">${bottle.vintage}</span>` : '',
+  ].join('');
+
+  document.getElementById('qty-display').textContent = '1';
+
+  // Form fields
+  setField('f-producer',    bottle.producer);
+  setField('f-wine-name',   bottle.wine_name);
+  setField('f-varietal',    bottle.varietal);
+  setField('f-vintage',     bottle.vintage);
+  setField('f-region',      bottle.region);
+  setField('f-country',     bottle.country);
+  setField('f-appellation', bottle.appellation);
+  setField('f-alcohol',     bottle.alcohol);
+  setField('f-drink-from',  '');
+  setField('f-drink-to',    '');
+  setField('f-image-url',   bottle.imageUrl);
+  document.getElementById('f-wine-type').value = bottle.wine_type || '';
+  document.getElementById('voice-note-text').value = '';
+
+  // Reset sommelier
+  document.getElementById('sommelier-loading').style.display = 'flex';
+  document.getElementById('sommelier-body').style.display    = 'none';
+  const fields = ['ctx-tasting','ctx-pairings','ctx-price','ctx-notable'];
+  fields.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
+}
+
+async function fetchVerifyContext(bottle) {
   try {
     const ctx = await postJSON('/api/wine-info', {
-      producer:    wineData.producer,
-      wine_name:   wineData.wine_name,
-      varietal:    wineData.varietal,
-      wine_type:   wineData.wine_type,
-      vintage:     wineData.vintage,
-      region:      wineData.region,
-      country:     wineData.country,
-      appellation: wineData.appellation,
+      producer:    bottle.producer,
+      wine_name:   bottle.wine_name,
+      varietal:    bottle.varietal,
+      wine_type:   bottle.wine_type,
+      vintage:     bottle.vintage,
+      region:      bottle.region,
+      country:     bottle.country,
+      appellation: bottle.appellation,
     });
-    populateWineContext(ctx);
-  } catch (err) {
-    console.error('[wine-info] error:', err);
-    if (placeholder) { placeholder.textContent = 'Could not load wine details.'; placeholder.style.display = ''; }
-  } finally {
-    if (loading) loading.style.display = 'none';
+    document.getElementById('ctx-tasting').innerHTML  = ctx.tasting_notes
+      ? `<strong>Tasting:</strong> ${esc(ctx.tasting_notes)}` : '';
+    document.getElementById('ctx-pairings').innerHTML = ctx.food_pairings
+      ? `<strong>Pairings:</strong> ${esc(ctx.food_pairings)}` : '';
+    document.getElementById('ctx-price').textContent  = ctx.price_range || '';
+    document.getElementById('ctx-notable').textContent= ctx.notable_info || '';
+    if (ctx.drink_from) setField('f-drink-from', ctx.drink_from);
+    if (ctx.drink_to)   setField('f-drink-to',   ctx.drink_to);
+    document.getElementById('sommelier-loading').style.display = 'none';
+    document.getElementById('sommelier-body').style.display    = 'flex';
+  } catch {
+    document.getElementById('sommelier-loading').textContent = 'Could not load notes.';
   }
 }
 
-function populateWineContext(ctx) {
-  const setText = (id, val) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = val || '—';
-  };
-  setText('ctx-producer', ctx.producer_bio);
-  setText('ctx-tasting',  ctx.tasting_notes);
-  setText('ctx-pairings', ctx.food_pairings);
-  setText('ctx-price',    ctx.price_range);
-  setText('ctx-notable',  ctx.notable_info);
-
-  // Populate drinking window fields in the form
-  setField('f-drink-from', ctx.drink_from ?? '');
-  setField('f-drink-to',   ctx.drink_to   ?? '');
-
-  const sections = document.getElementById('context-sections');
-  if (sections) sections.style.display = 'flex';
-  const placeholder = document.getElementById('context-placeholder');
-  if (placeholder) placeholder.style.display = 'none';
-}
-
-// ── Bottle queue management ───────────────────────────────────────────────────
-function loadNextBottle() {
-  const bottle = bottleQueue[bottleQueueIndex];
-  if (!bottle) return;
-  populateAnalysisForm(bottle);
-  updateQueueProgress();
-  fetchWineContext(bottle);
-  document.getElementById('save-btn').disabled = false;
-}
-
-function skipBottle() {
-  bottleQueueIndex++;
-  if (bottleQueueIndex < bottleQueue.length) {
-    loadNextBottle();
+function updateQueueIndicator() {
+  const total = bottleQueue.length;
+  const el    = document.getElementById('verify-queue-indicator');
+  const skip  = document.getElementById('verify-skip-btn');
+  if (total > 1) {
+    el.textContent    = `Bottle ${bottleQueueIdx + 1} of ${total}`;
+    el.style.display  = '';
+    skip.style.display = '';
   } else {
-    clearAnalysisForm();
-    toast('No more bottles in this scan.', 'success');
+    el.style.display   = 'none';
+    skip.style.display = 'none';
   }
 }
 
-function updateQueueProgress() {
-  const total   = bottleQueue.length;
-  const current = bottleQueueIndex + 1;
-  const el      = document.getElementById('queue-progress');
-  const skipBtn = document.getElementById('skip-btn');
-  if (el)      { el.textContent = `Bottle ${current} of ${total}`; el.style.display = total > 1 ? 'inline' : 'none'; }
-  if (skipBtn) { skipBtn.style.display = total > 1 ? '' : 'none'; }
+function adjustQty(delta) {
+  currentQty = Math.max(1, currentQty + delta);
+  document.getElementById('qty-display').textContent = currentQty;
+  haptic([18]);
 }
 
-// ── Duplicate detection ───────────────────────────────────────────────────────
-function findDuplicate(payload) {
-  const norm = s => (s || '').toLowerCase().trim();
-  const producer = norm(payload.producer);
-  const wineName = norm(payload.wine_name);
-  const varietal = norm(payload.varietal);
-  const vintage  = payload.vintage;
-
-  return wines.find(w => {
-    if (norm(w.producer) !== producer) return false;
-    // Match on wine_name when both have one; fall back to varietal
-    if (wineName && norm(w.wine_name) !== wineName) return false;
-    if (!wineName && varietal && norm(w.varietal) !== varietal) return false;
-    // Vintages must agree when both are present
-    if (vintage && w.vintage && w.vintage !== vintage) return false;
-    return true;
-  });
-}
-
-// Returns a Promise that resolves to 'increment' | 'new' | 'cancel'
-function showDuplicateDialog(existing, addQty) {
-  return new Promise((resolve) => {
-    const label   = [existing.producer, existing.wine_name || existing.varietal].filter(Boolean).join(' · ');
-    const curQty  = existing.quantity || 1;
-    const nextQty = curQty + addQty;
-
-    document.getElementById('dup-dialog-msg').innerHTML =
-      `<strong>${esc(label)}</strong>${existing.vintage ? ` (${existing.vintage})` : ''} is already in your cellar`
-      + ` with <strong>${curQty} bottle${curQty !== 1 ? 's' : ''}</strong>.`
-      + ` Add ${addQty} more to this entry, or create a separate entry?`;
-
-    document.getElementById('dup-btn-increment').textContent =
-      `Add to existing  (${curQty} → ${nextQty} bottle${nextQty !== 1 ? 's' : ''})`;
-
-    const dialog = document.getElementById('dup-dialog');
-    dialog.classList.add('open');
-
-    function close(result) {
-      dialog.classList.remove('open');
-      document.getElementById('dup-btn-increment').onclick = null;
-      document.getElementById('dup-btn-new').onclick       = null;
-      document.getElementById('dup-btn-cancel').onclick    = null;
-      resolve(result);
-    }
-
-    document.getElementById('dup-btn-increment').onclick = () => close('increment');
-    document.getElementById('dup-btn-new').onclick       = () => close('new');
-    document.getElementById('dup-btn-cancel').onclick    = () => close('cancel');
-  });
-}
-
-// ── Save wine from sidebar form ───────────────────────────────────────────────
-async function saveWine() {
+async function saveVerifyBottle() {
   const producer = document.getElementById('f-producer').value.trim();
-  if (!producer) return toast('Producer / Winery is required.', 'error');
+  if (!producer) { toast('Producer / Winery is required.', 'error'); return; }
 
   const payload = {
     producer,
@@ -314,279 +365,353 @@ async function saveWine() {
     country:     document.getElementById('f-country').value.trim()     || null,
     appellation: document.getElementById('f-appellation').value.trim() || null,
     alcohol:     toFloatOrNull(document.getElementById('f-alcohol').value),
-    quantity:    parseInt(document.getElementById('f-quantity').value, 10) || 1,
-    notes:       document.getElementById('f-notes').value.trim()       || null,
+    quantity:    currentQty,
+    notes:       document.getElementById('voice-note-text').value.trim() || null,
     imageUrl:    document.getElementById('f-image-url').value          || null,
     drink_from:  toIntOrNull(document.getElementById('f-drink-from').value),
     drink_to:    toIntOrNull(document.getElementById('f-drink-to').value),
   };
 
-  // ── Duplicate check ──────────────────────────────────────────────────────
-  const duplicate = findDuplicate(payload);
-  if (duplicate) {
-    const choice = await showDuplicateDialog(duplicate, payload.quantity || 1);
+  // Duplicate check
+  const dupe = findDuplicate(payload);
+  if (dupe) {
+    const choice = await showDuplicateDialog(dupe, payload.quantity);
     if (choice === 'cancel') return;
-
     if (choice === 'increment') {
-      const btn = document.getElementById('save-btn');
-      btn.disabled = true;
+      const newQty = (dupe.quantity || 1) + (payload.quantity || 1);
       try {
-        const newQty = (duplicate.quantity || 1) + (payload.quantity || 1);
-        const updated = await putJSON(`/api/wines/${duplicate.id}`, { ...duplicate, quantity: newQty });
-        const idx = wines.findIndex(w => w.id === duplicate.id);
+        const updated = await putJSON(`/api/wines/${dupe.id}`, { ...dupe, quantity: newQty });
+        const idx = wines.findIndex(w => w.id === dupe.id);
         if (idx !== -1) wines[idx] = updated;
-        renderInventory();
-        refreshStats();
-        bottleQueueIndex++;
-        if (bottleQueueIndex < bottleQueue.length) {
-          toast(`Added to "${updated.producer}" — now ${newQty} bottles. Moving to next.`, 'success');
-          loadNextBottle();
-        } else {
-          toast(`"${updated.producer}" updated — now ${newQty} bottles.`, 'success');
-          clearAnalysisForm();
-        }
-      } catch (err) {
-        toast(`Update failed: ${err.message}`, 'error');
-        document.getElementById('save-btn').disabled = false;
-      }
+        refreshStats(); renderCellar();
+        celebrate();
+        advanceQueue(`"${updated.producer}" — now ${newQty} bottles.`);
+      } catch (err) { toast(`Update failed: ${err.message}`, 'error'); }
       return;
     }
-    // choice === 'new' — fall through to normal add below
   }
 
-  const btn = document.getElementById('save-btn');
+  const btn = document.getElementById('verify-save-btn');
   btn.disabled = true;
   try {
     const saved = await postJSON('/api/wines', payload);
     wines.unshift(saved);
-    renderInventory();
-    refreshStats();
-    bottleQueueIndex++;
-    if (bottleQueueIndex < bottleQueue.length) {
-      toast(`"${saved.producer}" saved — moving to bottle ${bottleQueueIndex + 1} of ${bottleQueue.length}.`, 'success');
-      loadNextBottle();
-    } else {
-      const total = bottleQueue.length;
-      toast(total > 1 ? `All ${total} bottles added to cellar!` : `"${saved.producer}" added to cellar!`, 'success');
-      clearAnalysisForm();
-    }
+    refreshStats(); renderCellar();
+    celebrate();
+    advanceQueue(`"${saved.producer}" added!`);
   } catch (err) {
     toast(`Save failed: ${err.message}`, 'error');
+  } finally {
     btn.disabled = false;
   }
 }
 
-// ── Load inventory from server ────────────────────────────────────────────────
-async function loadInventory() {
-  try {
-    wines = await getJSON('/api/wines');
-    // Server returns oldest-first; reverse for newest-first display
-    wines.reverse();
-    renderInventory();
-    refreshStats();
-  } catch (err) {
-    toast('Could not load inventory: ' + err.message, 'error');
+function skipVerifyBottle() {
+  bottleQueueIdx++;
+  if (bottleQueueIdx < bottleQueue.length) {
+    loadNextBottle();
+  } else {
+    closeSheet('verify');
+    toast('No more bottles.', 'info');
   }
 }
 
-// ── Refresh stats bar ─────────────────────────────────────────────────────────
-async function refreshStats() {
-  try {
-    const s = await getJSON('/api/stats');
-    document.getElementById('stat-total-wines').textContent   = s.totalWines;
-    document.getElementById('stat-total-bottles').textContent = s.totalBottles;
-    document.getElementById('stat-red').textContent       = s.byType.red       || 0;
-    document.getElementById('stat-white').textContent     = s.byType.white     || 0;
-    document.getElementById('stat-sparkling').textContent = s.byType.sparkling || 0;
-    const other = Object.entries(s.byType)
-      .filter(([k]) => !['red','white','sparkling'].includes(k))
-      .reduce((acc, [, v]) => acc + v, 0);
-    document.getElementById('stat-other').textContent = other;
-  } catch { /* non-critical */ }
+function advanceQueue(msg) {
+  bottleQueueIdx++;
+  if (bottleQueueIdx < bottleQueue.length) {
+    toast(`${msg} Moving to next bottle…`, 'success');
+    loadNextBottle();
+  } else {
+    closeSheet('verify');
+    toast(msg, 'success');
+  }
 }
 
-// ── Render inventory (grid or table) ─────────────────────────────────────────
-function renderInventory() {
-  const query  = (document.getElementById('search-input').value || '').toLowerCase();
-  const filter = document.getElementById('type-filter').value;
+/* ════════════════════════════════════════════════════════════════════════════
+   VOICE NOTES  (Web Speech API)
+════════════════════════════════════════════════════════════════════════════ */
+function toggleVoiceNote() {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    toast('Voice input not supported in this browser.', 'info');
+    return;
+  }
+  const btn = document.getElementById('voice-note-btn');
+  if (speechRec) {
+    speechRec.stop();
+    return;
+  }
+  haptic([25, 20, 25]);
+  speechRec = new SpeechRecognition();
+  speechRec.continuous      = false;
+  speechRec.interimResults  = false;
+  speechRec.lang            = 'en-US';
 
-  const filtered = wines.filter((w) => {
-    if (filter && w.wine_type !== filter) return false;
-    if (!query) return true;
-    const haystack = [w.producer, w.wine_name, w.varietal, w.region, w.country, w.appellation, w.vintage]
-      .filter(Boolean).join(' ').toLowerCase();
-    return haystack.includes(query);
+  btn.classList.add('recording');
+  btn.querySelector('svg').style.fill = 'currentColor';
+
+  speechRec.onresult = e => {
+    const transcript = e.results[0][0].transcript;
+    const ta = document.getElementById('voice-note-text');
+    ta.value = (ta.value ? ta.value + ' ' : '') + transcript;
+    haptic([40]);
+    playTone(528, 80);
+  };
+  speechRec.onerror = () => {
+    toast('Voice input error. Try again.', 'error');
+  };
+  speechRec.onend = () => {
+    speechRec = null;
+    btn.classList.remove('recording');
+    btn.querySelector('svg').style.fill = '';
+  };
+  speechRec.start();
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   CELLAR SCREEN
+════════════════════════════════════════════════════════════════════════════ */
+function setupCellarFilters() {
+  document.getElementById('filter-pills').addEventListener('click', e => {
+    const pill = e.target.closest('.filter-pill');
+    if (!pill) return;
+    document.querySelectorAll('.filter-pill').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    currentFilter = pill.dataset.type;
+    renderCellar();
+    haptic([18]);
   });
-
-  if (currentView === 'grid') renderGrid(filtered);
-  else renderTable(filtered);
 }
 
-function renderGrid(list) {
-  const grid = document.getElementById('wine-grid');
-  if (!list.length) { grid.innerHTML = emptyStateHTML(); return; }
+function setupGroupToggle() {
+  document.getElementById('group-seg').addEventListener('click', e => {
+    const btn = e.target.closest('.seg-btn');
+    if (!btn) return;
+    document.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentGroup = btn.dataset.group;
+    renderCellar();
+    haptic([18]);
+  });
+}
 
-  grid.innerHTML = list.map((w) => `
-    <div class="wine-card" id="card-${w.id}" style="cursor:pointer" onclick="openWineDetail(${w.id})">
+function renderCellar() {
+  const grid = document.getElementById('cellar-grid');
+
+  let filtered = wines.filter(w => !currentFilter || w.wine_type === currentFilter);
+
+  if (!filtered.length) {
+    grid.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">🍾</div>
+        <h3>No wines here yet</h3>
+        <p>Scan a bottle on the Scan tab to add your first wine.</p>
+      </div>`;
+    return;
+  }
+
+  if (currentGroup === 'none') {
+    grid.innerHTML = filtered.map(wineCardHTML).join('');
+  } else {
+    const groups = groupWines(filtered, currentGroup);
+    let html = '';
+    for (const [label, groupWines] of Object.entries(groups)) {
+      html += `
+        <div class="cellar-full">
+          <div class="cellar-section-hdr">
+            <span>${esc(label)}</span>
+            <span class="cellar-section-count">${groupWines.length}</span>
+          </div>
+        </div>
+        ${groupWines.map(wineCardHTML).join('')}`;
+    }
+    grid.innerHTML = html;
+  }
+
+  // Attach card click listeners
+  grid.querySelectorAll('.wine-card').forEach(card => {
+    card.addEventListener('click', () => openDetail(parseInt(card.dataset.id, 10)));
+  });
+}
+
+function groupWines(list, by) {
+  const groups = {};
+  const key = by === 'region'
+    ? w => w.region || w.country || 'Unknown Region'
+    : w => capitalise(w.wine_type || 'Other');
+
+  for (const w of list) {
+    const k = key(w);
+    if (!groups[k]) groups[k] = [];
+    groups[k].push(w);
+  }
+
+  // Sort groups alphabetically
+  const sorted = {};
+  Object.keys(groups).sort().forEach(k => { sorted[k] = groups[k]; });
+  return sorted;
+}
+
+function wineCardHTML(w) {
+  const img = w.imageUrl
+    ? `<img src="${esc(w.imageUrl)}" alt="${esc(w.producer || '')}" loading="lazy" />`
+    : '🍾';
+  const drink = (w.drink_from || w.drink_to)
+    ? `<div class="wine-card-drink">Drink ${w.drink_from || '?'}–${w.drink_to || '?'}</div>` : '';
+  return `
+    <div class="wine-card" data-id="${w.id}">
       <div class="wine-card-img">
-        ${w.imageUrl
-          ? `<img src="${w.imageUrl}" alt="${esc(w.producer)}" loading="lazy" />`
-          : '🍾'}
+        ${img}
+        <div class="wine-card-qty">×${w.quantity || 1}</div>
       </div>
       <div class="wine-card-body">
-        <div class="wine-card-producer">${esc(w.producer || 'Unknown Producer')}</div>
+        <div class="wine-card-producer">${esc(w.producer || 'Unknown')}</div>
         <div class="wine-card-name">${esc(w.wine_name || w.varietal || '—')}</div>
-        <div class="wine-card-tags">
+        <div class="wine-card-meta">
           ${typeTag(w.wine_type)}
           ${w.vintage ? `<span class="tag tag-vintage">${w.vintage}</span>` : ''}
         </div>
-        <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:4px">${esc(w.region || w.country || '')}</div>
-        ${(w.drink_from || w.drink_to) ? `<div style="font-size:.72rem;color:var(--gold);margin-bottom:6px">Drink ${w.drink_from || '?'}–${w.drink_to || '?'}</div>` : ''}
-        <div class="wine-card-footer">
-          <span class="qty-badge">× ${w.quantity || 1} bottle${(w.quantity || 1) !== 1 ? 's' : ''}</span>
-          <div class="card-actions">
-            <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openEdit(${w.id})" title="Edit">✏️</button>
-            <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteWine(${w.id})" title="Delete">🗑</button>
-          </div>
-        </div>
+        ${drink}
       </div>
-    </div>
-  `).join('');
-}
-
-function renderTable(list) {
-  const tbody = document.getElementById('wine-tbody');
-  if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text-muted)">${emptyStateHTML()}</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = list.map((w) => `
-    <tr style="cursor:pointer" onclick="openWineDetail(${w.id})">
-      <td>
-        <div class="table-thumb">
-          ${w.imageUrl ? `<img src="${w.imageUrl}" alt="" />` : '🍾'}
-        </div>
-      </td>
-      <td><strong>${esc(w.producer || '—')}</strong></td>
-      <td>${esc(w.wine_name || '—')}</td>
-      <td>${esc(w.varietal || '—')}</td>
-      <td>${typeTag(w.wine_type)}</td>
-      <td>${w.vintage || '—'}</td>
-      <td>${esc(w.region || '—')}</td>
-      <td>${esc(w.country || '—')}</td>
-      <td>${w.quantity || 1}</td>
-      <td onclick="event.stopPropagation()">
-        <div style="display:flex;gap:4px">
-          <button class="btn btn-ghost btn-sm" onclick="openEdit(${w.id})">✏️</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteWine(${w.id})">🗑</button>
-        </div>
-      </td>
-    </tr>
-  `).join('');
-}
-
-function emptyStateHTML() {
-  return `
-    <div class="empty-state">
-      <div class="empty-state-icon">🍾</div>
-      <h3>Your cellar is empty</h3>
-      <p>Upload a photo or capture a video frame to add your first bottle.</p>
     </div>`;
 }
 
-// ── View toggling ─────────────────────────────────────────────────────────────
-function setView(view) {
-  currentView = view;
-  document.getElementById('view-grid').classList.toggle('active', view === 'grid');
-  document.getElementById('view-table').classList.toggle('active', view === 'table');
-  document.getElementById('wine-grid').classList.toggle('hidden', view !== 'grid');
-  document.getElementById('wine-table-wrap').classList.toggle('hidden', view !== 'table');
-  renderInventory();
+/* ════════════════════════════════════════════════════════════════════════════
+   SEARCH SCREEN
+════════════════════════════════════════════════════════════════════════════ */
+function setupSearch() {
+  const input = document.getElementById('search-input');
+  const clear = document.getElementById('search-clear');
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    clear.classList.toggle('visible', q.length > 0);
+    renderSearchResults(q);
+  });
+
+  clear.addEventListener('click', () => {
+    input.value = '';
+    clear.classList.remove('visible');
+    renderSearchResults('');
+    input.focus();
+  });
 }
 
-// ── Delete wine ───────────────────────────────────────────────────────────────
-async function deleteWine(id) {
-  const wine = wines.find((w) => w.id === id);
-  if (!wine) return;
-  const label = wine.producer || 'this wine';
-  if (!confirm(`Remove "${label}" from your cellar?`)) return;
-
-  try {
-    await deleteReq(`/api/wines/${id}`);
-    wines = wines.filter((w) => w.id !== id);
-    renderInventory();
-    refreshStats();
-    toast(`"${label}" removed.`, 'success');
-  } catch (err) {
-    toast(`Delete failed: ${err.message}`, 'error');
+function renderSearchResults(query) {
+  const container = document.getElementById('search-results');
+  if (!query) {
+    container.innerHTML = '<div id="search-results-hint">Type to search your cellar</div>';
+    return;
   }
+  const q = query.toLowerCase();
+  const results = wines.filter(w => {
+    const hay = [w.producer, w.wine_name, w.varietal, w.region, w.country, w.appellation, w.vintage]
+      .filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(q);
+  });
+
+  if (!results.length) {
+    container.innerHTML = '<div id="search-results-hint">No wines match your search</div>';
+    return;
+  }
+
+  container.innerHTML = results.map(w => {
+    const thumb = w.imageUrl
+      ? `<img src="${esc(w.imageUrl)}" alt="" loading="lazy" />`
+      : '🍾';
+    return `
+      <div class="search-row" data-id="${w.id}">
+        <div class="search-row-thumb">${thumb}</div>
+        <div class="search-row-body">
+          <div class="search-row-producer">${esc(w.producer || '—')}</div>
+          <div class="search-row-name">${esc(w.wine_name || w.varietal || '—')}</div>
+          <div class="search-row-meta">
+            ${typeTag(w.wine_type)}
+            ${w.vintage ? `<span class="tag tag-vintage">${w.vintage}</span>` : ''}
+          </div>
+        </div>
+        <div class="search-row-qty">×${w.quantity || 1}</div>
+      </div>`;
+  }).join('');
+
+  container.querySelectorAll('.search-row').forEach(row => {
+    row.addEventListener('click', () => openDetail(parseInt(row.dataset.id, 10)));
+  });
 }
 
-// ── Wine detail overlay ──────────────────────────────────────────────────────
-function openWineDetail(id) {
+/* ════════════════════════════════════════════════════════════════════════════
+   DETAIL SHEET
+════════════════════════════════════════════════════════════════════════════ */
+function setupDetailSheet() {
+  document.getElementById('detail-close').addEventListener('click', () => closeSheet('detail'));
+  document.getElementById('detail-edit-btn').addEventListener('click', () => {
+    closeSheet('detail');
+    setTimeout(() => openEdit(detailWineId), 350);
+  });
+  document.getElementById('detail-delete-btn').addEventListener('click', () => {
+    if (confirm('Remove this wine from your cellar?')) {
+      const id = detailWineId;
+      closeSheet('detail');
+      deleteWine(id);
+    }
+  });
+  setupSheetDrag('detail-sheet', () => closeSheet('detail'));
+}
+
+function openDetail(id) {
   const wine = wines.find(w => w.id === id);
   if (!wine) return;
   detailWineId = id;
 
-  // Hero image
-  const imgWrap = document.getElementById('detail-hero-img');
-  imgWrap.innerHTML = wine.imageUrl
-    ? `<img src="${esc(wine.imageUrl)}" alt="${esc(wine.producer || '')}" />`
-    : '🍾';
-
-  // Tags: type + vintage + appellation pill
-  document.getElementById('detail-hero-tags').innerHTML = [
-    typeTag(wine.wine_type),
-    wine.vintage ? `<span class="tag tag-vintage">${wine.vintage}</span>` : '',
-    wine.appellation ? `<span class="tag" style="background:var(--surface2);border:1px solid var(--border);font-size:.68rem">${esc(wine.appellation)}</span>` : '',
-  ].join('');
-
-  document.getElementById('detail-producer').textContent  = wine.producer  || '—';
-  document.getElementById('detail-wine-name').textContent = wine.wine_name || wine.varietal || '';
-  document.getElementById('detail-location').textContent  = [wine.region, wine.country].filter(Boolean).join(', ');
-
-  const dw = document.getElementById('detail-drink-window');
-  if (wine.drink_from || wine.drink_to) {
-    dw.textContent = `Drink: ${wine.drink_from || '?'} – ${wine.drink_to || '?'}`;
-    dw.style.display = '';
+  // Hero
+  const img   = document.getElementById('detail-hero-img');
+  const ph    = document.getElementById('detail-hero-placeholder');
+  if (wine.imageUrl) {
+    img.src = wine.imageUrl; img.style.display = 'block'; ph.style.display = 'none';
   } else {
-    dw.style.display = 'none';
+    img.style.display = 'none'; ph.style.display = 'flex';
   }
 
-  // Facts grid
-  const drinkWindow = (wine.drink_from || wine.drink_to)
-    ? `${wine.drink_from || '?'} – ${wine.drink_to || '?'}`
-    : null;
+  document.getElementById('detail-producer').textContent = wine.producer || '—';
+  document.getElementById('detail-name').textContent     = wine.wine_name || wine.varietal || '';
+  document.getElementById('detail-tags').innerHTML = [
+    typeTag(wine.wine_type),
+    wine.vintage    ? `<span class="tag tag-vintage">${wine.vintage}</span>` : '',
+    wine.appellation? `<span class="tag tag-unknown">${esc(wine.appellation)}</span>` : '',
+  ].join('');
+
+  // Facts
+  const drinkWin = (wine.drink_from || wine.drink_to)
+    ? `${wine.drink_from || '?'}–${wine.drink_to || '?'}` : null;
   const facts = [
-    ['Varietal',     wine.varietal    || '—'],
-    ['Alcohol',      wine.alcohol     ? `${wine.alcohol}%` : '—'],
-    ['Volume',       wine.volume_ml   ? `${wine.volume_ml} ml` : '—'],
-    ['In Cellar',    `${wine.quantity || 1} bottle${(wine.quantity||1)!==1?'s':''}`],
-    ['Drink Window', drinkWindow || '—'],
-    ['Confidence',   wine.confidence  || '—'],
-    ['Added',        wine.dateAdded   ? new Date(wine.dateAdded).toLocaleDateString() : '—'],
+    ['Varietal',    wine.varietal   || '—'],
+    ['Alcohol',     wine.alcohol    ? `${wine.alcohol}%` : '—'],
+    ['In Cellar',   `${wine.quantity || 1} bottle${(wine.quantity||1)!==1?'s':''}`],
+    ['Drink Window',drinkWin || '—'],
+    ['Region',      [wine.region, wine.country].filter(Boolean).join(', ') || '—'],
+    ['Added',       wine.dateAdded ? new Date(wine.dateAdded).toLocaleDateString() : '—'],
   ];
-  document.getElementById('detail-facts-grid').innerHTML = facts.map(([l, v]) => {
-    const highlight = l === 'Drink Window' && drinkWindow
-      ? ' style="color:var(--gold);font-weight:600"' : '';
-    return `<div><div class="detail-fact-label">${l}</div><div class="detail-fact-value"${highlight}>${esc(String(v))}</div></div>`;
+  document.getElementById('detail-facts').innerHTML = facts.map(([l, v]) => {
+    const gold = l === 'Drink Window' && drinkWin ? ' style="color:var(--gold)"' : '';
+    return `<div>
+      <div class="detail-fact-label">${l}</div>
+      <div class="detail-fact-value"${gold}>${esc(String(v))}</div>
+    </div>`;
   }).join('');
 
   // Notes
-  const notesSection = document.getElementById('detail-notes-section');
+  const noteSec = document.getElementById('detail-notes-section');
   document.getElementById('detail-notes-text').textContent = wine.notes || '';
-  notesSection.style.display = wine.notes ? '' : 'none';
+  noteSec.style.display = wine.notes ? '' : 'none';
 
-  // Context: reset then fetch
-  document.getElementById('detail-ctx-loading').style.display = '';
-  document.getElementById('detail-ctx-loading').textContent = 'Fetching sommelier notes…';
-  document.getElementById('detail-ctx-body').style.display = 'none';
+  // Context
+  document.getElementById('detail-ctx-loading').style.display = 'flex';
+  document.getElementById('detail-ctx-body').style.display    = 'none';
+  ['dctx-producer','dctx-tasting','dctx-pairings','dctx-price','dctx-notable'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.textContent = '';
+  });
 
-  const overlay = document.getElementById('detail-overlay');
-  overlay.style.display = 'flex';
-  overlay.scrollTop = 0;
-  document.body.style.overflow = 'hidden';
-
+  openSheet('detail');
   fetchDetailContext(wine);
 }
 
@@ -597,36 +722,38 @@ async function fetchDetailContext(wine) {
       wine_type: wine.wine_type, vintage: wine.vintage, region: wine.region,
       country: wine.country, appellation: wine.appellation,
     });
-    if (detailWineId !== wine.id) return; // overlay switched while fetching
-    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || '—'; };
+    if (detailWineId !== wine.id) return;
+    const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || ''; };
     set('dctx-producer', ctx.producer_bio);
     set('dctx-tasting',  ctx.tasting_notes);
     set('dctx-pairings', ctx.food_pairings);
     set('dctx-price',    ctx.price_range);
     set('dctx-notable',  ctx.notable_info);
     document.getElementById('detail-ctx-loading').style.display = 'none';
-    document.getElementById('detail-ctx-body').style.display   = '';
+    const body = document.getElementById('detail-ctx-body');
+    body.style.display    = 'flex';
+    body.style.flexDirection = 'column';
+    body.style.gap        = '12px';
   } catch {
     if (detailWineId !== wine.id) return;
-    document.getElementById('detail-ctx-loading').textContent = 'Could not load wine details.';
+    document.getElementById('detail-ctx-loading').textContent = 'Could not load sommelier notes.';
   }
 }
 
-function closeWineDetail() {
-  document.getElementById('detail-overlay').style.display = 'none';
-  document.body.style.overflow = '';
-  detailWineId = null;
+/* ════════════════════════════════════════════════════════════════════════════
+   EDIT SHEET
+════════════════════════════════════════════════════════════════════════════ */
+function setupEditSheet() {
+  document.getElementById('edit-close').addEventListener('click', () => closeSheet('edit'));
+  document.getElementById('edit-cancel-btn').addEventListener('click', () => closeSheet('edit'));
+  document.getElementById('edit-save-btn').addEventListener('click', saveEdit);
+  setupSheetDrag('edit-sheet', () => closeSheet('edit'));
 }
 
-function editWineFromDetail()   { openEdit(detailWineId); }
-async function deleteWineFromDetail() { const id = detailWineId; closeWineDetail(); await deleteWine(id); }
-
-// ── Edit modal ────────────────────────────────────────────────────────────────
 function openEdit(id) {
-  const wine = wines.find((w) => w.id === id);
+  const wine = wines.find(w => w.id === id);
   if (!wine) return;
   editingId = id;
-
   document.getElementById('m-producer').value    = wine.producer    || '';
   document.getElementById('m-wine-name').value   = wine.wine_name   || '';
   document.getElementById('m-varietal').value    = wine.varietal    || '';
@@ -638,19 +765,8 @@ function openEdit(id) {
   document.getElementById('m-appellation').value = wine.appellation || '';
   document.getElementById('m-alcohol').value     = wine.alcohol     || '';
   document.getElementById('m-notes').value       = wine.notes       || '';
-
-  document.getElementById('modal-overlay').classList.add('open');
+  openSheet('edit');
 }
-
-function closeModal() {
-  document.getElementById('modal-overlay').classList.remove('open');
-  editingId = null;
-}
-
-// Close modal on overlay click
-document.getElementById('modal-overlay').addEventListener('click', (e) => {
-  if (e.target === document.getElementById('modal-overlay')) closeModal();
-});
 
 async function saveEdit() {
   if (!editingId) return;
@@ -667,87 +783,266 @@ async function saveEdit() {
     alcohol:     toFloatOrNull(document.getElementById('m-alcohol').value),
     notes:       document.getElementById('m-notes').value.trim()       || null,
   };
-
   try {
     const updated = await putJSON(`/api/wines/${editingId}`, payload);
-    const idx = wines.findIndex((w) => w.id === editingId);
+    const idx = wines.findIndex(w => w.id === editingId);
     if (idx !== -1) wines[idx] = updated;
-    closeModal();
-    renderInventory();
+    closeSheet('edit');
+    renderCellar();
     refreshStats();
+    haptic([30, 20, 30]);
     toast('Wine updated.', 'success');
   } catch (err) {
     toast(`Update failed: ${err.message}`, 'error');
   }
 }
 
-// ── CSV export ────────────────────────────────────────────────────────────────
-function exportCSV() {
-  window.location.href = '/api/export/csv';
+/* ════════════════════════════════════════════════════════════════════════════
+   DELETE
+════════════════════════════════════════════════════════════════════════════ */
+async function deleteWine(id) {
+  const wine = wines.find(w => w.id === id);
+  if (!wine) return;
+  try {
+    await deleteReq(`/api/wines/${id}`);
+    wines = wines.filter(w => w.id !== id);
+    renderCellar();
+    renderSearchResults(document.getElementById('search-input').value.trim());
+    refreshStats();
+    haptic([50]);
+    toast(`"${wine.producer}" removed.`, 'success');
+  } catch (err) {
+    toast(`Delete failed: ${err.message}`, 'error');
+  }
 }
 
-// ── Toggle upload vs analysis panel ──────────────────────────────────────────
-function showUploadSection() {
-  document.getElementById('image-file-input').value = '';
+/* ════════════════════════════════════════════════════════════════════════════
+   DUPLICATE DIALOG
+════════════════════════════════════════════════════════════════════════════ */
+function setupDuplicateDialog() {
+  // Handlers wired dynamically in showDuplicateDialog
 }
 
-function clearAnalysisForm() {
-  bottleQueue = [];
-  bottleQueueIndex = 0;
-  ['f-producer','f-wine-name','f-varietal','f-vintage','f-region',
-   'f-country','f-appellation','f-alcohol','f-notes','f-image-url',
-   'f-drink-from','f-drink-to'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
+function findDuplicate(payload) {
+  const norm = s => (s || '').toLowerCase().trim();
+  return wines.find(w => {
+    if (norm(w.producer) !== norm(payload.producer)) return false;
+    if (payload.wine_name && norm(w.wine_name) !== norm(payload.wine_name)) return false;
+    if (!payload.wine_name && payload.varietal && norm(w.varietal) !== norm(payload.varietal)) return false;
+    if (payload.vintage && w.vintage && w.vintage !== payload.vintage) return false;
+    return true;
   });
-  const typeSelect = document.getElementById('f-wine-type');
-  if (typeSelect) typeSelect.value = '';
-  document.getElementById('f-quantity').value = 1;
-  const badge = document.getElementById('confidence-badge');
-  if (badge) { badge.textContent = '—'; badge.className = 'confidence-badge'; }
-  const img = document.getElementById('bottle-preview-img');
-  if (img) { img.src = ''; img.style.display = 'none'; }
-  document.getElementById('image-file-input').value = '';
-  document.getElementById('save-btn').disabled = true;
-  const summary = document.getElementById('form-summary');
-  if (summary) summary.style.display = 'none';
-  const qp = document.getElementById('queue-progress');
-  if (qp) qp.style.display = 'none';
-  const skipBtn = document.getElementById('skip-btn');
-  if (skipBtn) skipBtn.style.display = 'none';
-  // Reset context panel
-  const placeholder = document.getElementById('context-placeholder');
-  if (placeholder) { placeholder.textContent = 'Scan a bottle to see sommelier notes.'; placeholder.style.display = ''; }
-  const sections = document.getElementById('context-sections');
-  if (sections) sections.style.display = 'none';
 }
 
-// ── Loading state ─────────────────────────────────────────────────────────────
-function setLoading(on) {
-  document.getElementById('analysis-loading').classList.toggle('hidden', !on);
+function showDuplicateDialog(existing, addQty) {
+  return new Promise(resolve => {
+    const label  = [existing.producer, existing.wine_name || existing.varietal].filter(Boolean).join(' · ');
+    const curQty = existing.quantity || 1;
+    const nextQty = curQty + addQty;
+    document.getElementById('dup-dialog-msg').innerHTML =
+      `<strong>${esc(label)}</strong>${existing.vintage ? ` (${existing.vintage})` : ''} is already in your cellar `
+      + `with <strong>${curQty} bottle${curQty !== 1 ? 's' : ''}</strong>. Add ${addQty} more, or create a separate entry?`;
+    document.getElementById('dup-btn-increment').textContent =
+      `Add to existing (${curQty} → ${nextQty})`;
+
+    const overlay = document.getElementById('dup-overlay');
+    overlay.classList.add('open');
+
+    function close(result) {
+      overlay.classList.remove('open');
+      ['dup-btn-increment','dup-btn-new','dup-btn-cancel'].forEach(id => {
+        document.getElementById(id).onclick = null;
+      });
+      resolve(result);
+    }
+    document.getElementById('dup-btn-increment').onclick = () => close('increment');
+    document.getElementById('dup-btn-new').onclick       = () => close('new');
+    document.getElementById('dup-btn-cancel').onclick    = () => close('cancel');
+  });
 }
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════════════
+   INVENTORY LOAD & STATS
+════════════════════════════════════════════════════════════════════════════ */
+async function loadInventory() {
+  try {
+    wines = await getJSON('/api/wines');
+    wines.reverse(); // newest first
+    renderCellar();
+    refreshStats();
+  } catch (err) {
+    toast('Could not load inventory: ' + err.message, 'error');
+  }
+}
+
+async function refreshStats() {
+  try {
+    const s = await getJSON('/api/stats');
+    document.getElementById('stat-total-wines').textContent   = s.totalWines;
+    document.getElementById('stat-total-bottles').textContent = s.totalBottles;
+    document.getElementById('stat-red').textContent       = s.byType.red       || 0;
+    document.getElementById('stat-white').textContent     = s.byType.white     || 0;
+    document.getElementById('stat-sparkling').textContent = s.byType.sparkling || 0;
+
+    // Cellar tab badge
+    const badge = document.getElementById('cellar-badge');
+    if (s.totalWines > 0) {
+      badge.textContent = s.totalWines > 99 ? '99+' : s.totalWines;
+      badge.classList.add('visible');
+    } else {
+      badge.classList.remove('visible');
+    }
+  } catch { /* non-critical */ }
+}
+
+function setupExport() {
+  document.getElementById('export-btn').addEventListener('click', () => {
+    window.location.href = '/api/export/csv';
+    haptic([20]);
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   SHEET MANAGEMENT
+════════════════════════════════════════════════════════════════════════════ */
+let _openSheet = null;
+
+function openSheet(name) {
+  if (_openSheet && _openSheet !== name) closeSheet(_openSheet);
+  _openSheet = name;
+  document.getElementById('sheet-overlay').classList.add('open');
+  document.getElementById(`${name}-sheet`).classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeSheet(name) {
+  document.getElementById(`${name}-sheet`).classList.remove('open');
+  if (_openSheet === name) {
+    _openSheet = null;
+    document.getElementById('sheet-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+    if (name === 'verify') {
+      bottleQueue    = [];
+      bottleQueueIdx = 0;
+    }
+  }
+}
+
+// Close sheet when overlay tapped
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('sheet-overlay').addEventListener('click', () => {
+    if (_openSheet) closeSheet(_openSheet);
+  });
+});
+
+/* ─── Swipe-to-dismiss sheets ─────────────────────────────────────────────── */
+function setupSheetDrag(sheetId, onDismiss) {
+  const sheet = document.getElementById(sheetId);
+  const handle = sheet.querySelector('.sheet-handle');
+  if (!handle) return;
+
+  let startY = 0, isDragging = false;
+
+  handle.addEventListener('touchstart', e => {
+    startY = e.touches[0].clientY;
+    isDragging = true;
+    sheet.style.transition = 'none';
+  }, { passive: true });
+
+  handle.addEventListener('touchmove', e => {
+    if (!isDragging) return;
+    const dy = Math.max(0, e.touches[0].clientY - startY);
+    sheet.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+
+  handle.addEventListener('touchend', e => {
+    if (!isDragging) return;
+    isDragging = false;
+    sheet.style.transition = '';
+    const dy = e.changedTouches[0].clientY - startY;
+    if (dy > 120) {
+      sheet.style.transform = '';
+      onDismiss();
+      haptic([30]);
+    } else {
+      sheet.style.transform = '';
+    }
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   HAPTICS & AUDIO
+════════════════════════════════════════════════════════════════════════════ */
+function haptic(pattern) {
+  try { if (navigator.vibrate) navigator.vibrate(pattern); } catch { /* ignore */ }
+}
+
+function playTone(freq = 440, duration = 100, type = 'sine') {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc  = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type      = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration / 1000);
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration / 1000);
+  } catch { /* ignore */ }
+}
+
+function celebrate() {
+  haptic([40, 30, 40, 30, 80]);
+  playTone(523, 80); // C5
+  setTimeout(() => playTone(659, 80), 90);  // E5
+  setTimeout(() => playTone(784, 120), 180); // G5
+
+  const flash = document.getElementById('celebrate-flash');
+  flash.classList.remove('flash');
+  void flash.offsetWidth; // reflow
+  flash.classList.add('flash');
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   TOAST
+════════════════════════════════════════════════════════════════════════════ */
 function toast(msg, type = 'info', duration = 4000) {
   const el = document.createElement('div');
-  el.className = `toast ${type}`;
+  el.className   = `toast ${type}`;
   el.textContent = msg;
   document.getElementById('toast-container').appendChild(el);
   setTimeout(() => el.remove(), duration);
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════════════
+   HELPERS
+════════════════════════════════════════════════════════════════════════════ */
 function typeTag(type) {
-  const t = (type || '').toLowerCase().replace('é', 'e');
+  if (!type) return '';
+  const t   = type.toLowerCase().replace('é', 'e');
   const cls = ['red','white','rose','rosé','sparkling','dessert','fortified','orange'].includes(t)
-    ? `tag-type-${t.replace('é','e')}`
-    : 'tag-type-unknown';
-  return type ? `<span class="tag ${cls}">${esc(type)}</span>` : '';
+    ? `tag-${t.replace('é','e')}` : 'tag-unknown';
+  return `<span class="tag ${cls}">${esc(type)}</span>`;
 }
 
 function esc(str) {
   if (str == null) return '';
-  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(str)
+    .replace(/&/g,'&amp;')
+    .replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+function capitalise(s) {
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+
+function setField(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.value = value ?? '';
 }
 
 function toIntOrNull(val) {
@@ -760,7 +1055,9 @@ function toFloatOrNull(val) {
   return isNaN(n) ? null : n;
 }
 
-// ── HTTP helpers ──────────────────────────────────────────────────────────────
+/* ════════════════════════════════════════════════════════════════════════════
+   HTTP HELPERS
+════════════════════════════════════════════════════════════════════════════ */
 async function getJSON(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(await r.text());
@@ -782,12 +1079,10 @@ async function postJSON(url, body) {
 
 async function postForm(url, formData) {
   const r = await fetch(url, { method: 'POST', body: formData });
-  console.log(`[postForm] ${url} → HTTP ${r.status}`);
   if (!r.ok) {
-    const body = await r.text();
-    console.error('[postForm] error body:', body);
+    const text = await r.text();
     let msg;
-    try { msg = JSON.parse(body).error; } catch { msg = body || r.statusText; }
+    try { msg = JSON.parse(text).error; } catch { msg = text || r.statusText; }
     throw new Error(msg);
   }
   return r.json();
