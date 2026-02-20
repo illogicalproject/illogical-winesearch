@@ -356,7 +356,8 @@ function renderGrid(list) {
           ${typeTag(w.wine_type)}
           ${w.vintage ? `<span class="tag tag-vintage">${w.vintage}</span>` : ''}
         </div>
-        <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:8px">${esc(w.region || w.country || '')}</div>
+        <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:4px">${esc(w.region || w.country || '')}</div>
+        ${(w.drink_from || w.drink_to) ? `<div style="font-size:.72rem;color:var(--gold);margin-bottom:6px">Drink ${w.drink_from || '?'}–${w.drink_to || '?'}</div>` : ''}
         <div class="wine-card-footer">
           <span class="qty-badge">× ${w.quantity || 1} bottle${(w.quantity || 1) !== 1 ? 's' : ''}</span>
           <div class="card-actions">
