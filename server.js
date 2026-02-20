@@ -21,15 +21,17 @@ const storage = multer.diskStorage({
     cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname)}`),
 });
 
+const CLAUDE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
 const upload = multer({
   storage,
   fileFilter: (_req, file, cb) => {
-    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    allowed.includes(file.mimetype)
+    // Accept any image/* — unsupported types get a clear JSON error in the route
+    file.mimetype.startsWith('image/')
       ? cb(null, true)
-      : cb(new Error('Only JPEG, PNG, WEBP, and GIF images are accepted for direct upload.'));
+      : cb(new Error('Please upload an image file (JPEG, PNG, WEBP, HEIC, etc.).'));
   },
-  limits: { fileSize: 15 * 1024 * 1024 }, // 15 MB
+  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
 });
 
 // ── JSON database helpers ─────────────────────────────────────────────────────
@@ -151,32 +153,44 @@ app.get('/api/wines', (_req, res) => {
 });
 
 // POST /api/analyze     — analyze image, return wine data (does NOT save yet)
-app.post('/api/analyze', upload.single('image'), async (req, res) => {
-  console.log('[analyze] request received — file:', req.file?.originalname ?? 'none', '| body keys:', Object.keys(req.body));
-  try {
-    let base64Data, mimeType, imageUrl;
-
-    if (req.file) {
-      // Multipart image upload
-      base64Data = fs.readFileSync(req.file.path).toString('base64');
-      mimeType = req.file.mimetype;
-      imageUrl = `/uploads/${req.file.filename}`;
-    } else if (req.body.imageData) {
-      // Base64 payload from browser video frame capture
-      const saved = saveBase64Image(req.body.imageData);
-      base64Data = saved.base64Data;
-      mimeType = saved.mimeType;
-      imageUrl = `/uploads/${saved.filename}`;
-    } else {
-      return res.status(400).json({ error: 'No image provided. Send a file or a base64 imageData field.' });
+app.post('/api/analyze', (req, res) => {
+  // Wrap multer so file-type rejections return JSON, never HTML
+  upload.single('image')(req, res, async (multerErr) => {
+    if (multerErr) {
+      return res.status(400).json({ error: multerErr.message });
     }
+    console.log('[analyze] request received — file:', req.file?.originalname ?? 'none', '| body keys:', Object.keys(req.body));
+    try {
+      let base64Data, mimeType, imageUrl;
 
-    const bottles = await analyzeWineImage(base64Data, mimeType);
-    res.json({ bottles, imageUrl });
-  } catch (err) {
-    console.error('[analyze]', err.message);
-    res.status(500).json({ error: err.message });
-  }
+      if (req.file) {
+        // Multipart image upload
+        base64Data = fs.readFileSync(req.file.path).toString('base64');
+        mimeType = req.file.mimetype;
+        // Claude only supports jpeg/png/webp/gif — give a clear message for others (e.g. HEIC from iPhone)
+        if (!CLAUDE_IMAGE_TYPES.includes(mimeType)) {
+          return res.status(400).json({
+            error: `"${mimeType}" images cannot be analysed directly. On iPhone, share the photo and choose "Save as JPEG", or use the Camera tab to capture a frame.`,
+          });
+        }
+        imageUrl = `/uploads/${req.file.filename}`;
+      } else if (req.body.imageData) {
+        // Base64 payload from browser video frame capture
+        const saved = saveBase64Image(req.body.imageData);
+        base64Data = saved.base64Data;
+        mimeType = saved.mimeType;
+        imageUrl = `/uploads/${saved.filename}`;
+      } else {
+        return res.status(400).json({ error: 'No image provided. Send a file or a base64 imageData field.' });
+      }
+
+      const bottles = await analyzeWineImage(base64Data, mimeType);
+      res.json({ bottles, imageUrl });
+    } catch (err) {
+      console.error('[analyze]', err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
 });
 
 // POST /api/wine-info   — fetch sommelier context for a known wine

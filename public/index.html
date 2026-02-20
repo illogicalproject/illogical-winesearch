@@ -37,11 +37,14 @@
       --shadow:      0 4px 24px rgba(0, 0, 0, 0.6);
     }
 
+    html { height: 100%; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
       background: var(--bg);
       color: var(--text);
-      min-height: 100vh;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
@@ -88,9 +91,15 @@
     .stat-label { font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; color: var(--text-muted); margin-top: 4px; }
 
     /* ── Layout ── */
-    .app { display: grid; grid-template-columns: 380px 1fr; height: calc(100vh - 56px - 50px); overflow: hidden; }
+    .app {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      flex: 1;          /* fill remaining height after header + stats bar */
+      min-height: 0;    /* allow flex child to shrink below content size  */
+      overflow: hidden;
+    }
     @media (max-width: 900px) {
-      .app { grid-template-columns: 1fr; height: auto; overflow: visible; }
+      .app { grid-template-columns: 1fr; flex: none; overflow: visible; }
       .sidebar { overflow-y: visible; max-height: none; }
       .main { overflow: visible; min-height: 50vh; }
       #inventory-container { overflow-y: visible; }
