@@ -64,7 +64,8 @@ async function analyzeWineImage(base64Data, mediaType) {
           {
             type: 'text',
             text: `You are a master sommelier analyzing a wine bottle label photograph.
-Extract every piece of information visible on the label and return ONLY a JSON object — no markdown, no explanation — with these exact fields:
+If more than one bottle is visible, focus exclusively on the single most prominent or foreground bottle.
+Extract every piece of information visible on that label and return ONLY a JSON object — no markdown, no explanation — with these exact fields:
 
 {
   "producer":     "winery or producer name (string or null)",
@@ -89,9 +90,12 @@ If a field cannot be determined, use null. Return ONLY the JSON object.`,
   });
 
   const raw = message.content[0].text.trim();
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
+  // Extract the first JSON object or array from the response
+  const jsonMatch = raw.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
   if (!jsonMatch) throw new Error('Claude returned an unexpected response format.');
-  return JSON.parse(jsonMatch[0]);
+  const parsed = JSON.parse(jsonMatch[0]);
+  // If Claude returned an array despite instructions, take the first (most prominent) entry
+  return Array.isArray(parsed) ? parsed[0] : parsed;
 }
 
 // Save a base64 image to disk, return the public URL path
