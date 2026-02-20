@@ -594,7 +594,10 @@
     <!-- Analysis result -->
     <div id="analysis-panel">
       <div class="analysis-header">
-        <h3>Detected Wine</h3>
+        <div style="display:flex;align-items:center;gap:8px">
+          <h3>Detected Wine</h3>
+          <span id="queue-progress" style="display:none;font-size:.72rem;color:var(--gold-light);background:rgba(255,255,255,.15);padding:2px 9px;border-radius:10px;white-space:nowrap;"></span>
+        </div>
         <div style="display:flex;align-items:center;gap:8px">
           <span class="confidence-badge" id="confidence-badge">—</span>
           <button onclick="clearAnalysisForm()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:.8rem;padding:2px 6px;" title="Clear form">✕ Clear</button>
@@ -716,8 +719,9 @@
       </div>
     </div>
 
-    <div class="sidebar-save-bar">
-      <button class="btn btn-gold btn-full" id="save-btn" onclick="saveWine()">
+    <div class="sidebar-save-bar" style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" id="skip-btn" onclick="skipBottle()" style="display:none;white-space:nowrap;">Skip →</button>
+      <button class="btn btn-gold btn-full" id="save-btn" onclick="saveWine()" disabled>
         + Add to Cellar
       </button>
     </div>

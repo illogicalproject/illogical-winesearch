@@ -52,7 +52,7 @@ function writeDB(data) {
 async function analyzeWineImage(base64Data, mediaType) {
   const message = await anthropic.messages.create({
     model: 'claude-opus-4-6',
-    max_tokens: 1024,
+    max_tokens: 4096,
     messages: [
       {
         role: 'user',
@@ -64,8 +64,8 @@ async function analyzeWineImage(base64Data, mediaType) {
           {
             type: 'text',
             text: `You are a master sommelier analyzing a wine bottle label photograph.
-If more than one bottle is visible, focus exclusively on the single most prominent or foreground bottle.
-Extract every piece of information visible on that label and return ONLY a JSON object — no markdown, no explanation — with these exact fields:
+Identify ALL distinct wine bottles visible in the image. For each bottle where you can read any label text, extract the information.
+Return ONLY a JSON array — no markdown, no explanation — where each element has these exact fields:
 
 {
   "producer":     "winery or producer name (string or null)",
@@ -82,7 +82,8 @@ Extract every piece of information visible on that label and return ONLY a JSON 
   "confidence":   "high | medium | low — your overall confidence in this extraction"
 }
 
-If a field cannot be determined, use null. Return ONLY the JSON object.`,
+Order elements from most to least prominent/readable. If only one bottle is visible, return a single-element array.
+If a field cannot be determined, use null. Return ONLY the JSON array.`,
           },
         ],
       },
@@ -90,12 +91,11 @@ If a field cannot be determined, use null. Return ONLY the JSON object.`,
   });
 
   const raw = message.content[0].text.trim();
-  // Extract the first JSON object or array from the response
   const jsonMatch = raw.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
   if (!jsonMatch) throw new Error('Claude returned an unexpected response format.');
   const parsed = JSON.parse(jsonMatch[0]);
-  // If Claude returned an array despite instructions, take the first (most prominent) entry
-  return Array.isArray(parsed) ? parsed[0] : parsed;
+  // Always normalise to an array
+  return Array.isArray(parsed) ? parsed : [parsed];
 }
 
 // Save a base64 image to disk, return the public URL path
@@ -171,8 +171,8 @@ app.post('/api/analyze', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'No image provided. Send a file or a base64 imageData field.' });
     }
 
-    const wineData = await analyzeWineImage(base64Data, mimeType);
-    res.json({ ...wineData, imageUrl });
+    const bottles = await analyzeWineImage(base64Data, mimeType);
+    res.json({ bottles, imageUrl });
   } catch (err) {
     console.error('[analyze]', err.message);
     res.status(500).json({ error: err.message });

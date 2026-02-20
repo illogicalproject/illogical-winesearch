@@ -3,6 +3,8 @@
 let wines = [];           // local cache of inventory
 let currentView = 'grid'; // 'grid' | 'table'
 let editingId = null;     // id of wine being edited in modal
+let bottleQueue = [];     // wines detected in the current scan
+let bottleQueueIndex = 0; // which bottle we're currently reviewing
 
 // ── Bootstrap ────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
@@ -64,8 +66,9 @@ async function analyseImageFile(file) {
     fd.append('image', file);
     const data = await postForm('/api/analyze', fd);
     console.log('[analyze] API data received:', data);
-    populateAnalysisForm(data);
-    fetchWineContext(data); // fire-and-forget — fills context panel when ready
+    bottleQueue = data.bottles.map(b => ({ ...b, imageUrl: data.imageUrl }));
+    bottleQueueIndex = 0;
+    loadNextBottle();
   } catch (err) {
     console.error('[analyze] caught error:', err);
     // Show for 10 s and restore the upload zone so the user can try again.
@@ -201,6 +204,35 @@ function populateWineContext(ctx) {
   if (placeholder) placeholder.style.display = 'none';
 }
 
+// ── Bottle queue management ───────────────────────────────────────────────────
+function loadNextBottle() {
+  const bottle = bottleQueue[bottleQueueIndex];
+  if (!bottle) return;
+  populateAnalysisForm(bottle);
+  updateQueueProgress();
+  fetchWineContext(bottle);
+  document.getElementById('save-btn').disabled = false;
+}
+
+function skipBottle() {
+  bottleQueueIndex++;
+  if (bottleQueueIndex < bottleQueue.length) {
+    loadNextBottle();
+  } else {
+    clearAnalysisForm();
+    toast('No more bottles in this scan.', 'success');
+  }
+}
+
+function updateQueueProgress() {
+  const total   = bottleQueue.length;
+  const current = bottleQueueIndex + 1;
+  const el      = document.getElementById('queue-progress');
+  const skipBtn = document.getElementById('skip-btn');
+  if (el)      { el.textContent = `Bottle ${current} of ${total}`; el.style.display = total > 1 ? 'inline' : 'none'; }
+  if (skipBtn) { skipBtn.style.display = total > 1 ? '' : 'none'; }
+}
+
 // ── Save wine from sidebar form ───────────────────────────────────────────────
 async function saveWine() {
   const producer = document.getElementById('f-producer').value.trim();
@@ -230,11 +262,17 @@ async function saveWine() {
     wines.unshift(saved);
     renderInventory();
     refreshStats();
-    toast(`"${saved.producer}" added to cellar!`, 'success');
-    showUploadSection();
+    bottleQueueIndex++;
+    if (bottleQueueIndex < bottleQueue.length) {
+      toast(`"${saved.producer}" saved — moving to bottle ${bottleQueueIndex + 1} of ${bottleQueue.length}.`, 'success');
+      loadNextBottle();
+    } else {
+      const total = bottleQueue.length;
+      toast(total > 1 ? `All ${total} bottles added to cellar!` : `"${saved.producer}" added to cellar!`, 'success');
+      clearAnalysisForm();
+    }
   } catch (err) {
     toast(`Save failed: ${err.message}`, 'error');
-  } finally {
     btn.disabled = false;
   }
 }
@@ -455,6 +493,8 @@ function showUploadSection() {
 }
 
 function clearAnalysisForm() {
+  bottleQueue = [];
+  bottleQueueIndex = 0;
   ['f-producer','f-wine-name','f-varietal','f-vintage','f-region',
    'f-country','f-appellation','f-alcohol','f-notes','f-image-url',
    'f-drink-from','f-drink-to'].forEach(id => {
@@ -469,6 +509,11 @@ function clearAnalysisForm() {
   const img = document.getElementById('bottle-preview-img');
   if (img) { img.src = ''; img.style.display = 'none'; }
   document.getElementById('image-file-input').value = '';
+  document.getElementById('save-btn').disabled = true;
+  const qp = document.getElementById('queue-progress');
+  if (qp) qp.style.display = 'none';
+  const skipBtn = document.getElementById('skip-btn');
+  if (skipBtn) skipBtn.style.display = 'none';
   // Reset context panel
   const placeholder = document.getElementById('context-placeholder');
   if (placeholder) { placeholder.textContent = 'Scan a bottle to see sommelier notes.'; placeholder.style.display = ''; }
