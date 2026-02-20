@@ -248,6 +248,57 @@ function updateQueueProgress() {
   if (skipBtn) { skipBtn.style.display = total > 1 ? '' : 'none'; }
 }
 
+// ── Duplicate detection ───────────────────────────────────────────────────────
+function findDuplicate(payload) {
+  const norm = s => (s || '').toLowerCase().trim();
+  const producer = norm(payload.producer);
+  const wineName = norm(payload.wine_name);
+  const varietal = norm(payload.varietal);
+  const vintage  = payload.vintage;
+
+  return wines.find(w => {
+    if (norm(w.producer) !== producer) return false;
+    // Match on wine_name when both have one; fall back to varietal
+    if (wineName && norm(w.wine_name) !== wineName) return false;
+    if (!wineName && varietal && norm(w.varietal) !== varietal) return false;
+    // Vintages must agree when both are present
+    if (vintage && w.vintage && w.vintage !== vintage) return false;
+    return true;
+  });
+}
+
+// Returns a Promise that resolves to 'increment' | 'new' | 'cancel'
+function showDuplicateDialog(existing, addQty) {
+  return new Promise((resolve) => {
+    const label   = [existing.producer, existing.wine_name || existing.varietal].filter(Boolean).join(' · ');
+    const curQty  = existing.quantity || 1;
+    const nextQty = curQty + addQty;
+
+    document.getElementById('dup-dialog-msg').innerHTML =
+      `<strong>${esc(label)}</strong>${existing.vintage ? ` (${existing.vintage})` : ''} is already in your cellar`
+      + ` with <strong>${curQty} bottle${curQty !== 1 ? 's' : ''}</strong>.`
+      + ` Add ${addQty} more to this entry, or create a separate entry?`;
+
+    document.getElementById('dup-btn-increment').textContent =
+      `Add to existing  (${curQty} → ${nextQty} bottle${nextQty !== 1 ? 's' : ''})`;
+
+    const dialog = document.getElementById('dup-dialog');
+    dialog.classList.add('open');
+
+    function close(result) {
+      dialog.classList.remove('open');
+      document.getElementById('dup-btn-increment').onclick = null;
+      document.getElementById('dup-btn-new').onclick       = null;
+      document.getElementById('dup-btn-cancel').onclick    = null;
+      resolve(result);
+    }
+
+    document.getElementById('dup-btn-increment').onclick = () => close('increment');
+    document.getElementById('dup-btn-new').onclick       = () => close('new');
+    document.getElementById('dup-btn-cancel').onclick    = () => close('cancel');
+  });
+}
+
 // ── Save wine from sidebar form ───────────────────────────────────────────────
 async function saveWine() {
   const producer = document.getElementById('f-producer').value.trim();
@@ -269,6 +320,39 @@ async function saveWine() {
     drink_from:  toIntOrNull(document.getElementById('f-drink-from').value),
     drink_to:    toIntOrNull(document.getElementById('f-drink-to').value),
   };
+
+  // ── Duplicate check ──────────────────────────────────────────────────────
+  const duplicate = findDuplicate(payload);
+  if (duplicate) {
+    const choice = await showDuplicateDialog(duplicate, payload.quantity || 1);
+    if (choice === 'cancel') return;
+
+    if (choice === 'increment') {
+      const btn = document.getElementById('save-btn');
+      btn.disabled = true;
+      try {
+        const newQty = (duplicate.quantity || 1) + (payload.quantity || 1);
+        const updated = await putJSON(`/api/wines/${duplicate.id}`, { ...duplicate, quantity: newQty });
+        const idx = wines.findIndex(w => w.id === duplicate.id);
+        if (idx !== -1) wines[idx] = updated;
+        renderInventory();
+        refreshStats();
+        bottleQueueIndex++;
+        if (bottleQueueIndex < bottleQueue.length) {
+          toast(`Added to "${updated.producer}" — now ${newQty} bottles. Moving to next.`, 'success');
+          loadNextBottle();
+        } else {
+          toast(`"${updated.producer}" updated — now ${newQty} bottles.`, 'success');
+          clearAnalysisForm();
+        }
+      } catch (err) {
+        toast(`Update failed: ${err.message}`, 'error');
+        document.getElementById('save-btn').disabled = false;
+      }
+      return;
+    }
+    // choice === 'new' — fall through to normal add below
+  }
 
   const btn = document.getElementById('save-btn');
   btn.disabled = true;

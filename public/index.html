@@ -205,6 +205,8 @@
     .btn-gold    { background: var(--gold); color: #000; font-weight: 600; border-radius: 50px; }
     .btn-ghost   { background: transparent; border: 1px solid var(--border); color: var(--text-muted); }
     .btn-ghost:hover { color: var(--text); border-color: rgba(255,255,255,.3); }
+    .btn-outline { background: transparent; border: 1px solid rgba(255,255,255,.25); color: var(--text); }
+    .btn-outline:hover { border-color: rgba(255,255,255,.5); }
     .btn-danger  { background: var(--red-soft); color: #fff; }
     .btn-sm      { padding: 6px 12px; font-size: .78rem; }
     .btn-full    { width: 100%; }
@@ -500,6 +502,29 @@
       justify-content: center;
     }
     #modal-overlay.open { display: flex; }
+
+    /* ── Duplicate-wine confirm dialog ── */
+    #dup-dialog {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.7);
+      z-index: 400;
+      align-items: center;
+      justify-content: center;
+    }
+    #dup-dialog.open { display: flex; }
+    #dup-dialog-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      width: min(400px, 92vw);
+      padding: 24px;
+      box-shadow: 0 16px 64px rgba(0,0,0,.7);
+    }
+    #dup-dialog-card h3 { margin: 0 0 8px; font-size: 1rem; }
+    #dup-dialog-card p  { margin: 0 0 20px; font-size: .875rem; color: var(--text-muted); line-height: 1.5; }
+    .dup-actions { display: flex; flex-direction: column; gap: 8px; }
+
     #modal {
       background: var(--surface);
       border: 1px solid var(--border);
@@ -1039,6 +1064,19 @@
   </div>
 </div>
 
-<script src="app.js?v=4"></script>
+<!-- Duplicate wine confirm dialog -->
+<div id="dup-dialog">
+  <div id="dup-dialog-card">
+    <h3>Already in your cellar</h3>
+    <p id="dup-dialog-msg"></p>
+    <div class="dup-actions">
+      <button class="btn btn-gold btn-full" id="dup-btn-increment"></button>
+      <button class="btn btn-outline btn-full" id="dup-btn-new">Add as separate entry</button>
+      <button class="btn btn-ghost btn-full" id="dup-btn-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js?v=5"></script>
 </body>
 </html>
