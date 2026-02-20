@@ -87,7 +87,7 @@
       border-right: 1px solid var(--border);
       overflow-y: auto;
       min-height: 0;
-      padding: 24px;
+      padding: 24px 24px 80px;
       display: flex;
       flex-direction: column;
       gap: 20px;
@@ -184,6 +184,15 @@
     .btn-danger  { background: var(--red-soft); color: #fff; }
     .btn-sm      { padding: 6px 12px; font-size: .78rem; }
     .btn-full    { width: 100%; }
+    .sidebar-save-bar {
+      position: sticky;
+      bottom: 0;
+      margin: 0 -24px 0;
+      padding: 12px 24px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      z-index: 20;
+    }
 
     /* ── Wine context panel ── */
     #wine-context-panel {
@@ -669,9 +678,6 @@
           <textarea id="f-notes" placeholder="Personal tasting notes, purchase location…"></textarea>
         </div>
         <input type="hidden" id="f-image-url" />
-        <button class="btn btn-gold btn-full" id="save-btn" onclick="saveWine()">
-          + Add to Cellar
-        </button>
       </div>
     </div>
 
@@ -708,6 +714,12 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="sidebar-save-bar">
+      <button class="btn btn-gold btn-full" id="save-btn" onclick="saveWine()">
+        + Add to Cellar
+      </button>
     </div>
 
   </aside>
