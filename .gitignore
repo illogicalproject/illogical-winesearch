@@ -5,3 +5,5 @@ wine_inventory.json
 *.log
 
 .env
+
+.env
