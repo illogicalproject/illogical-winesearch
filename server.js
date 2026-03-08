@@ -27,7 +27,6 @@ const CLAUDE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'
 const upload = multer({
   storage,
   fileFilter: (_req, file, cb) => {
-    // Accept any image/* — unsupported types get a clear JSON error in the route
     file.mimetype.startsWith('image/')
       ? cb(null, true)
       : cb(new Error('Please upload an image file (JPEG, PNG, WEBP, HEIC, etc.).'));
@@ -68,8 +67,7 @@ async function analyzeWineImage(base64Data, mediaType) {
             type: 'text',
             text: `You are a master sommelier analyzing a wine bottle label photograph.
 Identify ALL distinct wine bottles visible in the image. For each bottle where you can read any label text, extract the information.
-Return ONLY a JSON array — no markdown, no explanation — where each element has these exact fields:
-
+Return ONLY a JSON array – no markdown, no explanation – where each element has these exact fields:
 {
   "producer":     "winery or producer name (string or null)",
   "wine_name":    "specific cuvée / wine name if different from producer (string or null)",
@@ -82,7 +80,7 @@ Return ONLY a JSON array — no markdown, no explanation — where each element 
   "alcohol":      "alcohol % as a number without the % sign, or null",
   "volume_ml":    "bottle size in ml as integer, e.g. 750, or null",
   "label_notes":  "brief description of any other label details worth noting (string or null)",
-  "confidence":   "high | medium | low — your overall confidence in this extraction",
+  "confidence":   "high | medium | low – your overall confidence in this extraction",
   "bounding_box": {
     "x_min": "left edge of bottle as a fraction of image width (0.0–1.0)",
     "y_min": "top edge of bottle as a fraction of image height (0.0–1.0)",
@@ -90,7 +88,6 @@ Return ONLY a JSON array — no markdown, no explanation — where each element 
     "y_max": "bottom edge of bottle as a fraction of image height (0.0–1.0)"
   }
 }
-
 Order elements from most to least prominent/readable. If only one bottle is visible, return a single-element array.
 If a field cannot be determined, use null. The bounding_box must always be present and must use numbers, not strings.
 Return ONLY the JSON array.`,
@@ -104,7 +101,6 @@ Return ONLY the JSON array.`,
   const jsonMatch = raw.match(/(\[[\s\S]*\]|\{[\s\S]*\})/);
   if (!jsonMatch) throw new Error('Claude returned an unexpected response format.');
   const parsed = JSON.parse(jsonMatch[0]);
-  // Always normalise to an array
   return Array.isArray(parsed) ? parsed : [parsed];
 }
 
@@ -123,14 +119,12 @@ function saveBase64Image(dataUrl) {
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
-// Serve index.html directly with no-cache headers and a server-start version
-// stamp injected into the script tag so every restart busts the JS cache.
 const SERVER_TS = Date.now();
 const PUBLIC_DIR = path.join(__dirname, 'public');
+
 app.get('/', (_req, res) => {
   const html = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
   const js   = fs.readFileSync(path.join(PUBLIC_DIR, 'app.js'), 'utf8');
-  // Inline app.js so the browser has no separate JS file to cache.
   const full = html.replace(
     /<script src="app\.js[^"]*"><\/script>/,
     `<script>\n${js}\n</script>`,
@@ -155,33 +149,39 @@ app.use('/uploads', express.static(uploadsDir));
 
 // ── API Routes ────────────────────────────────────────────────────────────────
 
-// GET  /api/wines       — list all wines
+// GET  /api/wines       – list all wines
 app.get('/api/wines', (_req, res) => {
   res.json(readDB().wines);
 });
 
-// POST /api/analyze     — analyze image, return wine data (does NOT save yet)
+// POST /api/analyze     – analyze image, return wine data (does NOT save yet)
 app.post('/api/analyze', (req, res) => {
-  // Wrap multer so file-type rejections return JSON, never HTML
   upload.single('image')(req, res, async (multerErr) => {
     if (multerErr) {
       return res.status(400).json({ error: multerErr.message });
     }
-    console.log('[analyze] request received — file:', req.file?.originalname ?? 'none', '| body keys:', Object.keys(req.body));
+
+    console.log('[analyze] request received – file:', req.file?.originalname ?? 'none', '| body keys:', Object.keys(req.body));
+
     try {
       let base64Data, mimeType, imageUrl;
 
       if (req.file) {
-        // Multipart image upload
         base64Data = fs.readFileSync(req.file.path).toString('base64');
         mimeType = req.file.mimetype;
-        // Claude only supports jpeg/png/webp/gif — give a clear message for others (e.g. HEIC from iPhone)
-        if (!CLAUDE_IMAGE_TYPES.includes(mimeType)) {
+        imageUrl = `/uploads/${req.file.filename}`;
+
+        // Convert HEIC/HEIF to JPEG before sending to Claude
+        if (mimeType === 'image/heic' || mimeType === 'image/heif') {
+          const inputBuffer = fs.readFileSync(req.file.path);
+          const outputBuffer = await heicConvert({ buffer: inputBuffer, format: 'JPEG', quality: 0.9 });
+          base64Data = Buffer.from(outputBuffer).toString('base64');
+          mimeType = 'image/jpeg';
+        } else if (!CLAUDE_IMAGE_TYPES.includes(mimeType)) {
           return res.status(400).json({
-            error: `"${mimeType}" images cannot be analysed directly. On iPhone, share the photo and choose "Save as JPEG", or use the Camera tab to capture a frame.`,
+            error: `"${mimeType}" images cannot be analysed. Please use JPEG, PNG, WEBP, or HEIC.`,
           });
         }
-        imageUrl = `/uploads/${req.file.filename}`;
       } else if (req.body.imageData) {
         // Base64 payload from browser video frame capture
         const saved = saveBase64Image(req.body.imageData);
@@ -201,7 +201,7 @@ app.post('/api/analyze', (req, res) => {
   });
 });
 
-// POST /api/upload-crop — save a pre-cropped base64 image, return its URL
+// POST /api/upload-crop – save a pre-cropped base64 image, return its URL
 app.post('/api/upload-crop', (req, res) => {
   try {
     if (!req.body.imageData) return res.status(400).json({ error: 'No imageData provided.' });
@@ -213,7 +213,7 @@ app.post('/api/upload-crop', (req, res) => {
   }
 });
 
-// POST /api/wine-info   — fetch sommelier context for a known wine
+// POST /api/wine-info   – fetch sommelier context for a known wine
 app.post('/api/wine-info', async (req, res) => {
   try {
     const { producer, wine_name, varietal, wine_type, vintage, region, country, appellation } = req.body;
@@ -247,7 +247,7 @@ app.post('/api/wine-info', async (req, res) => {
   }
 });
 
-// POST /api/wines       — save a wine to inventory
+// POST /api/wines       – save a wine to inventory
 app.post('/api/wines', (req, res) => {
   const db = readDB();
   const wine = {
@@ -276,12 +276,11 @@ app.post('/api/wines', (req, res) => {
   res.status(201).json(wine);
 });
 
-// PUT /api/wines/:id    — update a wine
+// PUT /api/wines/:id    – update a wine
 app.put('/api/wines/:id', (req, res) => {
   const db = readDB();
   const idx = db.wines.findIndex((w) => w.id === parseInt(req.params.id, 10));
   if (idx === -1) return res.status(404).json({ error: 'Wine not found.' });
-
   db.wines[idx] = {
     ...db.wines[idx],
     ...req.body,
@@ -293,12 +292,11 @@ app.put('/api/wines/:id', (req, res) => {
   res.json(db.wines[idx]);
 });
 
-// DELETE /api/wines/:id — remove a wine (cleans up uploaded image too)
+// DELETE /api/wines/:id – remove a wine (cleans up uploaded image too)
 app.delete('/api/wines/:id', (req, res) => {
   const db = readDB();
   const idx = db.wines.findIndex((w) => w.id === parseInt(req.params.id, 10));
   if (idx === -1) return res.status(404).json({ error: 'Wine not found.' });
-
   const wine = db.wines[idx];
   if (wine.imageUrl) {
     const imgPath = path.join(__dirname, wine.imageUrl);
@@ -306,13 +304,12 @@ app.delete('/api/wines/:id', (req, res) => {
       try { fs.unlinkSync(imgPath); } catch { /* ignore */ }
     }
   }
-
   db.wines.splice(idx, 1);
   writeDB(db);
   res.json({ success: true });
 });
 
-// GET /api/export/csv   — download inventory as CSV
+// GET /api/export/csv   – download inventory as CSV
 app.get('/api/export/csv', (_req, res) => {
   const db = readDB();
   const headers = [
@@ -333,7 +330,7 @@ app.get('/api/export/csv', (_req, res) => {
   res.send([headers.map(escape).join(','), ...rows].join('\r\n'));
 });
 
-// GET /api/stats        — summary statistics
+// GET /api/stats        – summary statistics
 app.get('/api/stats', (_req, res) => {
   const { wines } = readDB();
   const totalBottles = wines.reduce((s, w) => s + (w.quantity || 1), 0);
@@ -347,8 +344,8 @@ app.get('/api/stats', (_req, res) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`\n🍷 Wine Inventory Bot running → http://localhost:${PORT}\n`);
+  console.log(`\nWine Inventory Bot running → http://localhost:${PORT}\n`);
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.warn('⚠️  ANTHROPIC_API_KEY is not set. Vision analysis will fail until you add it to .env\n');
+    console.warn('WARNING: ANTHROPIC_API_KEY is not set. Vision analysis will fail until you add it to .env\n');
   }
 });
