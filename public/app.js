@@ -1,5 +1,4 @@
 /* ── Wine Cellar — Mobile-First App Logic ──────────────────────────────────── */
-
 /* ── State ─────────────────────────────────────────────────────────────────── */
 let wines          = [];
 let currentScreen  = 'scan';
@@ -16,7 +15,6 @@ let currentGroup   = 'type';
 let speechRec      = null;
 let audioCtx       = null;
 let sheetDragStart = null;
-
 /* ── Bootstrap ─────────────────────────────────────────────────────────────── */
 document.addEventListener('DOMContentLoaded', () => {
   setupNav();
@@ -32,7 +30,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setupExport();
   loadInventory();
 });
-
 /* ════════════════════════════════════════════════════════════════════════════
    NAVIGATION
 ════════════════════════════════════════════════════════════════════════════ */
@@ -41,17 +38,14 @@ function setupNav() {
     btn.addEventListener('click', () => switchScreen(btn.dataset.screen));
   });
 }
-
 function switchScreen(name) {
   if (name === currentScreen) return;
   const prev = currentScreen;
   currentScreen = name;
-
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.screen === name));
   const next = document.getElementById(`screen-${name}`);
   if (next) next.classList.add('active');
-
   // Camera lifecycle
   if (name === 'scan') {
     startCamera();
@@ -61,7 +55,6 @@ function switchScreen(name) {
     window._cameraStopTimer = setTimeout(stopCamera, 30000);
   }
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    CAMERA
 ════════════════════════════════════════════════════════════════════════════ */
@@ -77,7 +70,6 @@ function setupCamera() {
   });
   startCamera();
 }
-
 async function startCamera() {
   if (cameraStream) return; // already running
   const video = document.getElementById('camera-video');
@@ -102,7 +94,6 @@ async function startCamera() {
     noAccess.classList.add('show');
   }
 }
-
 function stopCamera() {
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
@@ -111,14 +102,12 @@ function stopCamera() {
     video.srcObject = null;
   }
 }
-
 async function flipCamera() {
   facingMode = facingMode === 'environment' ? 'user' : 'environment';
   stopCamera();
   await startCamera();
   haptic([30]);
 }
-
 function toggleFlash() {
   flashEnabled = !flashEnabled;
   const btn = document.getElementById('flash-btn');
@@ -131,7 +120,6 @@ function toggleFlash() {
   }
   haptic([20]);
 }
-
 async function captureFrame() {
   const video = document.getElementById('camera-video');
   if (!cameraStream || video.readyState < 2) {
@@ -147,7 +135,6 @@ async function captureFrame() {
   const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
   await analyzeImage({ imageData: dataUrl });
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    GALLERY
 ════════════════════════════════════════════════════════════════════════════ */
@@ -158,15 +145,14 @@ function setupGallery() {
     if (input.files.length) handleFiles(input.files);
   });
 }
-
 async function handleFiles(fileList) {
-  const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+  const ALLOWED = /\.(jpe?g|png|webp|gif|heic|heif)$/i;
+  const files = Array.from(fileList).filter(f => f.type.startsWith('image/') || ALLOWED.test(f.name));
   if (!files.length) return toast('Please select an image file.', 'error');
   for (const file of files) {
     await analyzeFile(file);
   }
 }
-
 async function analyzeFile(file) {
   setCameraLoading(true);
   try {
@@ -180,7 +166,6 @@ async function analyzeFile(file) {
     setCameraLoading(false);
   }
 }
-
 async function analyzeImage(payload) {
   setCameraLoading(true);
   try {
@@ -192,13 +177,11 @@ async function analyzeImage(payload) {
     setCameraLoading(false);
   }
 }
-
 async function handleAnalysisResult(data) {
   if (!data.bottles || !data.bottles.length) {
     toast('No wine label detected. Try again with better lighting.', 'error');
     return;
   }
-
   // Crop each bottle to its own tight image concurrently
   const rawBottles = data.bottles.map(b => ({ ...b, imageUrl: data.imageUrl }));
   const croppedBottles = await Promise.all(rawBottles.map(async bottle => {
@@ -212,10 +195,8 @@ async function handleAnalysisResult(data) {
     }
     return bottle;
   }));
-
   bottleQueue    = croppedBottles;
   bottleQueueIdx = 0;
-
   const first = bottleQueue[0];
   showARBubble(first);
   setTimeout(() => {
@@ -223,17 +204,14 @@ async function handleAnalysisResult(data) {
     loadNextBottle();
     openSheet('verify');
   }, 1200);
-
   haptic([40, 60, 40]);
   playTone(660, 120);
 }
-
 /* Crop a bottle out of imageUrl using normalised bbox coords, upload the crop */
 async function cropBottleImage(imageUrl, bbox) {
   const img = await loadImage(imageUrl);
   const W = img.naturalWidth;
   const H = img.naturalHeight;
-
   // 4% padding so the bottle isn't clipped right at the edge
   const pad = 0.04;
   const x1 = Math.max(0, (bbox.x_min ?? 0) - pad) * W;
@@ -242,21 +220,17 @@ async function cropBottleImage(imageUrl, bbox) {
   const y2 = Math.min(H, ((bbox.y_max ?? 1) + pad) * H);
   const cropW = x2 - x1;
   const cropH = y2 - y1;
-
   // Skip crop if bbox is basically the whole image (no real segmentation)
   const areaFraction = (cropW / W) * (cropH / H);
   if (areaFraction > 0.85) return imageUrl;
-
   const canvas = document.createElement('canvas');
   canvas.width  = cropW;
   canvas.height = cropH;
   canvas.getContext('2d').drawImage(img, x1, y1, cropW, cropH, 0, 0, cropW, cropH);
-
   const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
   const { imageUrl: croppedUrl } = await postJSON('/api/upload-crop', { imageData: dataUrl });
   return croppedUrl;
 }
-
 function loadImage(url) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -266,7 +240,6 @@ function loadImage(url) {
     img.src = url;
   });
 }
-
 /* AR bubble */
 function showARBubble(bottle) {
   const el  = document.getElementById('ar-bubble');
@@ -279,14 +252,12 @@ function showARBubble(bottle) {
 function hideARBubble() {
   document.getElementById('ar-bubble').classList.add('hidden');
 }
-
 function setCameraLoading(on) {
   const el = document.getElementById('camera-loading');
   el.classList.toggle('visible', on);
   const hint = document.getElementById('scan-hint');
   hint.classList.toggle('hidden', on);
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    VERIFY SHEET
 ════════════════════════════════════════════════════════════════════════════ */
@@ -299,7 +270,6 @@ function setupVerifySheet() {
   document.getElementById('voice-note-btn').addEventListener('click', toggleVoiceNote);
   setupSheetDrag('verify-sheet', () => closeSheet('verify'));
 }
-
 function loadNextBottle() {
   const bottle = bottleQueue[bottleQueueIdx];
   if (!bottle) return;
@@ -308,7 +278,6 @@ function loadNextBottle() {
   updateQueueIndicator();
   fetchVerifyContext(bottle);
 }
-
 function populateVerifySheet(bottle) {
   // Hero
   const imgWrap = document.getElementById('verify-img-wrap');
@@ -317,24 +286,19 @@ function populateVerifySheet(bottle) {
   } else {
     imgWrap.textContent = '🍾';
   }
-
   const conf = (bottle.confidence || 'low').toLowerCase();
   const confEl = document.getElementById('verify-confidence');
   confEl.className = `verify-confidence ${conf}`;
   confEl.textContent = conf.charAt(0).toUpperCase() + conf.slice(1) + ' Confidence';
-
   document.getElementById('verify-producer').textContent = bottle.producer || '—';
   document.getElementById('verify-name').textContent     = bottle.wine_name || bottle.varietal || '';
   document.getElementById('verify-location').textContent =
     [bottle.region, bottle.country].filter(Boolean).join(', ');
-
   document.getElementById('verify-tags').innerHTML = [
     typeTag(bottle.wine_type),
     bottle.vintage ? `<span class="tag tag-vintage">${bottle.vintage}</span>` : '',
   ].join('');
-
   document.getElementById('qty-display').textContent = '1';
-
   // Form fields
   setField('f-producer',    bottle.producer);
   setField('f-wine-name',   bottle.wine_name);
@@ -349,14 +313,12 @@ function populateVerifySheet(bottle) {
   setField('f-image-url',   bottle.imageUrl);
   document.getElementById('f-wine-type').value = bottle.wine_type || '';
   document.getElementById('voice-note-text').value = '';
-
   // Reset sommelier
   document.getElementById('sommelier-loading').style.display = 'flex';
   document.getElementById('sommelier-body').style.display    = 'none';
   const fields = ['ctx-tasting','ctx-pairings','ctx-price','ctx-notable'];
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ''; });
 }
-
 async function fetchVerifyContext(bottle) {
   try {
     const ctx = await postJSON('/api/wine-info', {
@@ -383,7 +345,6 @@ async function fetchVerifyContext(bottle) {
     document.getElementById('sommelier-loading').textContent = 'Could not load notes.';
   }
 }
-
 function updateQueueIndicator() {
   const total = bottleQueue.length;
   const el    = document.getElementById('verify-queue-indicator');
@@ -397,17 +358,14 @@ function updateQueueIndicator() {
     skip.style.display = 'none';
   }
 }
-
 function adjustQty(delta) {
   currentQty = Math.max(1, currentQty + delta);
   document.getElementById('qty-display').textContent = currentQty;
   haptic([18]);
 }
-
 async function saveVerifyBottle() {
   const producer = document.getElementById('f-producer').value.trim();
   if (!producer) { toast('Producer / Winery is required.', 'error'); return; }
-
   const payload = {
     producer,
     wine_name:   document.getElementById('f-wine-name').value.trim()   || null,
@@ -424,7 +382,6 @@ async function saveVerifyBottle() {
     drink_from:  toIntOrNull(document.getElementById('f-drink-from').value),
     drink_to:    toIntOrNull(document.getElementById('f-drink-to').value),
   };
-
   // Duplicate check
   const dupe = findDuplicate(payload);
   if (dupe) {
@@ -443,7 +400,6 @@ async function saveVerifyBottle() {
       return;
     }
   }
-
   const btn = document.getElementById('verify-save-btn');
   btn.disabled = true;
   try {
@@ -458,7 +414,6 @@ async function saveVerifyBottle() {
     btn.disabled = false;
   }
 }
-
 function skipVerifyBottle() {
   bottleQueueIdx++;
   if (bottleQueueIdx < bottleQueue.length) {
@@ -468,7 +423,6 @@ function skipVerifyBottle() {
     toast('No more bottles.', 'info');
   }
 }
-
 function advanceQueue(msg) {
   bottleQueueIdx++;
   if (bottleQueueIdx < bottleQueue.length) {
@@ -479,7 +433,6 @@ function advanceQueue(msg) {
     toast(msg, 'success');
   }
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    VOICE NOTES  (Web Speech API)
 ════════════════════════════════════════════════════════════════════════════ */
@@ -499,10 +452,8 @@ function toggleVoiceNote() {
   speechRec.continuous      = false;
   speechRec.interimResults  = false;
   speechRec.lang            = 'en-US';
-
   btn.classList.add('recording');
   btn.querySelector('svg').style.fill = 'currentColor';
-
   speechRec.onresult = e => {
     const transcript = e.results[0][0].transcript;
     const ta = document.getElementById('voice-note-text');
@@ -520,7 +471,6 @@ function toggleVoiceNote() {
   };
   speechRec.start();
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    CELLAR SCREEN
 ════════════════════════════════════════════════════════════════════════════ */
@@ -535,7 +485,6 @@ function setupCellarFilters() {
     haptic([18]);
   });
 }
-
 function setupGroupToggle() {
   document.getElementById('group-seg').addEventListener('click', e => {
     const btn = e.target.closest('.seg-btn');
@@ -547,12 +496,9 @@ function setupGroupToggle() {
     haptic([18]);
   });
 }
-
 function renderCellar() {
   const grid = document.getElementById('cellar-grid');
-
   let filtered = wines.filter(w => !currentFilter || w.wine_type === currentFilter);
-
   if (!filtered.length) {
     const isFiltered = !!currentFilter;
     grid.innerHTML = `
@@ -572,7 +518,6 @@ function renderCellar() {
     }
     return;
   }
-
   if (currentGroup === 'none') {
     grid.innerHTML = filtered.map(wineCardHTML).join('');
   } else {
@@ -590,31 +535,26 @@ function renderCellar() {
     }
     grid.innerHTML = html;
   }
-
   // Attach card click listeners
   grid.querySelectorAll('.wine-card').forEach(card => {
     card.addEventListener('click', () => openDetail(parseInt(card.dataset.id, 10)));
   });
 }
-
 function groupWines(list, by) {
   const groups = {};
   const key = by === 'region'
     ? w => w.region || w.country || 'Unknown Region'
     : w => capitalise(w.wine_type || 'Other');
-
   for (const w of list) {
     const k = key(w);
     if (!groups[k]) groups[k] = [];
     groups[k].push(w);
   }
-
   // Sort groups alphabetically
   const sorted = {};
   Object.keys(groups).sort().forEach(k => { sorted[k] = groups[k]; });
   return sorted;
 }
-
 function wineCardHTML(w) {
   const img = w.imageUrl
     ? `<img src="${esc(w.imageUrl)}" alt="${esc(w.producer || '')}" loading="lazy" />`
@@ -638,20 +578,17 @@ function wineCardHTML(w) {
       </div>
     </div>`;
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    SEARCH SCREEN
 ════════════════════════════════════════════════════════════════════════════ */
 function setupSearch() {
   const input = document.getElementById('search-input');
   const clear = document.getElementById('search-clear');
-
   input.addEventListener('input', () => {
     const q = input.value.trim();
     clear.classList.toggle('visible', q.length > 0);
     renderSearchResults(q);
   });
-
   clear.addEventListener('click', () => {
     input.value = '';
     clear.classList.remove('visible');
@@ -659,7 +596,6 @@ function setupSearch() {
     input.focus();
   });
 }
-
 function renderSearchResults(query) {
   const container = document.getElementById('search-results');
   if (!query) {
@@ -672,12 +608,10 @@ function renderSearchResults(query) {
       .filter(Boolean).join(' ').toLowerCase();
     return hay.includes(q);
   });
-
   if (!results.length) {
     container.innerHTML = '<div id="search-results-hint">No wines match your search</div>';
     return;
   }
-
   container.innerHTML = results.map(w => {
     const thumb = w.imageUrl
       ? `<img src="${esc(w.imageUrl)}" alt="" loading="lazy" />`
@@ -696,12 +630,10 @@ function renderSearchResults(query) {
         <div class="search-row-qty">×${w.quantity || 1}</div>
       </div>`;
   }).join('');
-
   container.querySelectorAll('.search-row').forEach(row => {
     row.addEventListener('click', () => openDetail(parseInt(row.dataset.id, 10)));
   });
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    DETAIL SHEET
 ════════════════════════════════════════════════════════════════════════════ */
@@ -720,12 +652,10 @@ function setupDetailSheet() {
   });
   setupSheetDrag('detail-sheet', () => closeSheet('detail'));
 }
-
 function openDetail(id) {
   const wine = wines.find(w => w.id === id);
   if (!wine) return;
   detailWineId = id;
-
   // Hero
   const img   = document.getElementById('detail-hero-img');
   const ph    = document.getElementById('detail-hero-placeholder');
@@ -734,7 +664,6 @@ function openDetail(id) {
   } else {
     img.style.display = 'none'; ph.style.display = 'flex';
   }
-
   document.getElementById('detail-producer').textContent = wine.producer || '—';
   document.getElementById('detail-name').textContent     = wine.wine_name || wine.varietal || '';
   document.getElementById('detail-tags').innerHTML = [
@@ -742,7 +671,6 @@ function openDetail(id) {
     wine.vintage    ? `<span class="tag tag-vintage">${wine.vintage}</span>` : '',
     wine.appellation? `<span class="tag tag-unknown">${esc(wine.appellation)}</span>` : '',
   ].join('');
-
   // Facts
   const drinkWin = (wine.drink_from || wine.drink_to)
     ? `${wine.drink_from || '?'}–${wine.drink_to || '?'}` : null;
@@ -761,23 +689,19 @@ function openDetail(id) {
       <div class="detail-fact-value"${gold}>${esc(String(v))}</div>
     </div>`;
   }).join('');
-
   // Notes
   const noteSec = document.getElementById('detail-notes-section');
   document.getElementById('detail-notes-text').textContent = wine.notes || '';
   noteSec.style.display = wine.notes ? '' : 'none';
-
   // Context
   document.getElementById('detail-ctx-loading').style.display = 'flex';
   document.getElementById('detail-ctx-body').style.display    = 'none';
   ['dctx-producer','dctx-tasting','dctx-pairings','dctx-price','dctx-notable'].forEach(id => {
     const el = document.getElementById(id); if (el) el.textContent = '';
   });
-
   openSheet('detail');
   fetchDetailContext(wine);
 }
-
 async function fetchDetailContext(wine) {
   try {
     const ctx = await postJSON('/api/wine-info', {
@@ -802,7 +726,6 @@ async function fetchDetailContext(wine) {
     document.getElementById('detail-ctx-loading').textContent = 'Could not load sommelier notes.';
   }
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    EDIT SHEET
 ════════════════════════════════════════════════════════════════════════════ */
@@ -812,7 +735,6 @@ function setupEditSheet() {
   document.getElementById('edit-save-btn').addEventListener('click', saveEdit);
   setupSheetDrag('edit-sheet', () => closeSheet('edit'));
 }
-
 function openEdit(id) {
   const wine = wines.find(w => w.id === id);
   if (!wine) return;
@@ -830,7 +752,6 @@ function openEdit(id) {
   document.getElementById('m-notes').value       = wine.notes       || '';
   openSheet('edit');
 }
-
 async function saveEdit() {
   if (!editingId) return;
   const payload = {
@@ -859,7 +780,6 @@ async function saveEdit() {
     toast(`Update failed: ${err.message}`, 'error');
   }
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    DELETE
 ════════════════════════════════════════════════════════════════════════════ */
@@ -878,14 +798,12 @@ async function deleteWine(id) {
     toast(`Delete failed: ${err.message}`, 'error');
   }
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    DUPLICATE DIALOG
 ════════════════════════════════════════════════════════════════════════════ */
 function setupDuplicateDialog() {
   // Handlers wired dynamically in showDuplicateDialog
 }
-
 function findDuplicate(payload) {
   const norm = s => (s || '').toLowerCase().trim();
   return wines.find(w => {
@@ -896,7 +814,6 @@ function findDuplicate(payload) {
     return true;
   });
 }
-
 function showDuplicateDialog(existing, addQty) {
   return new Promise(resolve => {
     const label  = [existing.producer, existing.wine_name || existing.varietal].filter(Boolean).join(' · ');
@@ -907,10 +824,8 @@ function showDuplicateDialog(existing, addQty) {
       + `with <strong>${curQty} bottle${curQty !== 1 ? 's' : ''}</strong>. Add ${addQty} more, or create a separate entry?`;
     document.getElementById('dup-btn-increment').textContent =
       `Add to existing (${curQty} → ${nextQty})`;
-
     const overlay = document.getElementById('dup-overlay');
     overlay.classList.add('open');
-
     function close(result) {
       overlay.classList.remove('open');
       ['dup-btn-increment','dup-btn-new','dup-btn-cancel'].forEach(id => {
@@ -923,7 +838,6 @@ function showDuplicateDialog(existing, addQty) {
     document.getElementById('dup-btn-cancel').onclick    = () => close('cancel');
   });
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    INVENTORY LOAD & STATS
 ════════════════════════════════════════════════════════════════════════════ */
@@ -937,7 +851,6 @@ async function loadInventory() {
     toast('Could not load inventory: ' + err.message, 'error');
   }
 }
-
 async function refreshStats() {
   try {
     const s = await getJSON('/api/stats');
@@ -946,7 +859,6 @@ async function refreshStats() {
     document.getElementById('stat-red').textContent       = s.byType.red       || 0;
     document.getElementById('stat-white').textContent     = s.byType.white     || 0;
     document.getElementById('stat-sparkling').textContent = s.byType.sparkling || 0;
-
     // Cellar tab badge
     const badge = document.getElementById('cellar-badge');
     if (s.totalWines > 0) {
@@ -957,19 +869,16 @@ async function refreshStats() {
     }
   } catch { /* non-critical */ }
 }
-
 function setupExport() {
   document.getElementById('export-btn').addEventListener('click', () => {
     window.location.href = '/api/export/csv';
     haptic([20]);
   });
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    SHEET MANAGEMENT
 ════════════════════════════════════════════════════════════════════════════ */
 let _openSheet = null;
-
 function openSheet(name) {
   if (_openSheet && _openSheet !== name) closeSheet(_openSheet);
   _openSheet = name;
@@ -977,7 +886,6 @@ function openSheet(name) {
   document.getElementById(`${name}-sheet`).classList.add('open');
   document.body.style.overflow = 'hidden';
 }
-
 function closeSheet(name) {
   document.getElementById(`${name}-sheet`).classList.remove('open');
   if (_openSheet === name) {
@@ -990,34 +898,28 @@ function closeSheet(name) {
     }
   }
 }
-
 // Close sheet when overlay tapped
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('sheet-overlay').addEventListener('click', () => {
     if (_openSheet) closeSheet(_openSheet);
   });
 });
-
 /* ─── Swipe-to-dismiss sheets ─────────────────────────────────────────────── */
 function setupSheetDrag(sheetId, onDismiss) {
   const sheet = document.getElementById(sheetId);
   const handle = sheet.querySelector('.sheet-handle');
   if (!handle) return;
-
   let startY = 0, isDragging = false;
-
   handle.addEventListener('touchstart', e => {
     startY = e.touches[0].clientY;
     isDragging = true;
     sheet.style.transition = 'none';
   }, { passive: true });
-
   handle.addEventListener('touchmove', e => {
     if (!isDragging) return;
     const dy = Math.max(0, e.touches[0].clientY - startY);
     sheet.style.transform = `translateY(${dy}px)`;
   }, { passive: true });
-
   handle.addEventListener('touchend', e => {
     if (!isDragging) return;
     isDragging = false;
@@ -1032,14 +934,12 @@ function setupSheetDrag(sheetId, onDismiss) {
     }
   });
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    HAPTICS & AUDIO
 ════════════════════════════════════════════════════════════════════════════ */
 function haptic(pattern) {
   try { if (navigator.vibrate) navigator.vibrate(pattern); } catch { /* ignore */ }
 }
-
 function playTone(freq = 440, duration = 100, type = 'sine') {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1055,19 +955,16 @@ function playTone(freq = 440, duration = 100, type = 'sine') {
     osc.stop(audioCtx.currentTime + duration / 1000);
   } catch { /* ignore */ }
 }
-
 function celebrate() {
   haptic([40, 30, 40, 30, 80]);
   playTone(523, 80); // C5
   setTimeout(() => playTone(659, 80), 90);  // E5
   setTimeout(() => playTone(784, 120), 180); // G5
-
   const flash = document.getElementById('celebrate-flash');
   flash.classList.remove('flash');
   void flash.offsetWidth; // reflow
   flash.classList.add('flash');
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    TOAST
 ════════════════════════════════════════════════════════════════════════════ */
@@ -1078,7 +975,6 @@ function toast(msg, type = 'info', duration = 4000) {
   document.getElementById('toast-container').appendChild(el);
   setTimeout(() => el.remove(), duration);
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    HELPERS
 ════════════════════════════════════════════════════════════════════════════ */
@@ -1089,7 +985,6 @@ function typeTag(type) {
     ? `tag-${t.replace('é','e')}` : 'tag-unknown';
   return `<span class="tag ${cls}">${esc(type)}</span>`;
 }
-
 function esc(str) {
   if (str == null) return '';
   return String(str)
@@ -1098,26 +993,21 @@ function esc(str) {
     .replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;');
 }
-
 function capitalise(s) {
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
 }
-
 function setField(id, value) {
   const el = document.getElementById(id);
   if (el) el.value = value ?? '';
 }
-
 function toIntOrNull(val) {
   const n = parseInt(val, 10);
   return isNaN(n) ? null : n;
 }
-
 function toFloatOrNull(val) {
   const n = parseFloat(val);
   return isNaN(n) ? null : n;
 }
-
 /* ════════════════════════════════════════════════════════════════════════════
    HTTP HELPERS
 ════════════════════════════════════════════════════════════════════════════ */
@@ -1126,7 +1016,6 @@ async function getJSON(url) {
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
-
 async function postJSON(url, body) {
   const r = await fetch(url, {
     method: 'POST',
@@ -1139,7 +1028,6 @@ async function postJSON(url, body) {
   }
   return r.json();
 }
-
 async function postForm(url, formData) {
   const r = await fetch(url, { method: 'POST', body: formData });
   if (!r.ok) {
@@ -1150,7 +1038,6 @@ async function postForm(url, formData) {
   }
   return r.json();
 }
-
 async function putJSON(url, body) {
   const r = await fetch(url, {
     method: 'PUT',
@@ -1163,7 +1050,6 @@ async function putJSON(url, body) {
   }
   return r.json();
 }
-
 async function deleteReq(url) {
   const r = await fetch(url, { method: 'DELETE' });
   if (!r.ok) {
