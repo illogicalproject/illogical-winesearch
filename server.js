@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const Anthropic = require('@anthropic-ai/sdk');
+const heicConvert = require('heic-convert');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
